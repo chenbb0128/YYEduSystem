@@ -1,0 +1,50 @@
+name: Mirror to NAS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-to-nas-main
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror main to NAS Git
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
+          NAS_KNOWN_HOSTS: ${{ secrets.NAS_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$NAS_SSH_KEY"
+          test -n "$NAS_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$NAS_SSH_KEY" > ~/.ssh/nas_mirror_key
+          printf '%s\n' "$NAS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/nas_mirror_key ~/.ssh/known_hosts
+
+      - name: Push to NAS mirror
+        shell: bash
+        env:
+          NAS_HOST: ${{ secrets.NAS_HOST }}
+          NAS_PORT: ${{ secrets.NAS_PORT }}
+          NAS_USER: ${{ secrets.NAS_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$NAS_HOST"
+          test -n "$NAS_PORT"
+          test -n "$NAS_USER"
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/nas_mirror_key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git remote add nas "ssh://${NAS_USER}@${NAS_HOST}:${NAS_PORT}/volume1/docker/yy-edusystem-git/YYEduSystem.git"
+          git push --force nas HEAD:refs/heads/main
