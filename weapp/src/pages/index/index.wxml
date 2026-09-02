@@ -1,0 +1,92 @@
+<AppPage>
+  <view class="page home-page">
+    <view class="page-header home-header">
+      <view class="page-header__identity">
+        <view class="brand-emblem">芽</view>
+        <view class="home-brand-copy">
+          <view class="page-eyebrow">{{appName}}</view>
+          <view class="page-title">星芽托管助手</view>
+          <view class="page-subtitle">让每一次托管，都成为孩子安心成长的一天</view>
+        </view>
+      </view>
+      <view class="service-chip {{initialized ? 'service-chip-ready' : ''}}"><view class="service-dot"></view>{{initialized ? '服务正常' : '初始化中'}}</view>
+    </view>
+
+    <block wx:if="{{!authenticated}}">
+      <view class="welcome-card login-welcome-card">
+        <view class="welcome-sun">☀</view>
+        <view class="welcome-copy welcome-copy-centered">
+          <view class="welcome-overline">欢迎进入</view>
+        <view class="welcome-title">星芽托管助手</view>
+          <view class="welcome-text">请选择您的使用入口</view>
+        </view>
+      </view>
+
+      <view class="entry-label">请选择您的身份</view>
+      <block wx:if="{{loginMode === 'choose'}}">
+        <view class="login-card login-card-parent" bind:tap="handleParentLogin">
+          <view class="login-icon login-icon-parent">家</view>
+          <view class="login-card-copy"><view class="login-card-title">我是家长</view><view class="login-card-text">Parent · 查看孩子的每一天</view></view>
+          <view class="login-chevron">›</view>
+        </view>
+        <view class="login-card login-card-teacher" bind:tap="handleOpenTeacherLogin">
+          <view class="login-icon login-icon-teacher">师</view>
+          <view class="login-card-copy"><view class="login-card-title">我是老师 / 校长</view><view class="login-card-text">Teacher · 安排今日托管工作</view></view>
+          <view class="login-chevron">›</view>
+        </view>
+      </block>
+
+      <block wx:else>
+        <view class="form-card login-form-card">
+          <view class="section-head"><view><view class="section-kicker">教师工作台</view><view class="section-title">登录你的工作账号</view></view><view class="text-link" bind:tap="handleBackToLoginChoice">返回入口</view></view>
+          <view class="form-intro">登录后可以查看接送名单、批改作业并审核家长入班申请。</view>
+          <view class="form-field"><text class="field-label">账号</text><view class="field-control"><input class="field-input" placeholder="{{focusedField === 'username' ? '' : '请输入教师账号'}}" data-field="username" value="{{username}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+          <view class="form-field"><text class="field-label">密码</text><view class="field-control"><input class="field-input" password placeholder="{{focusedField === 'password' ? '' : '请输入密码'}}" data-field="password" value="{{password}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+          <view class="login-submit"><t-button block theme="primary" loading="{{loginLoading}}" bind:tap="handleTeacherLogin">登录工作台</t-button></view>
+          <view class="form-footnote">账号由后台“用户管理”创建，默认管理员：admin / 123456</view>
+        </view>
+      </block>
+    </block>
+
+    <block wx:elif="{{role === 'teacher'}}">
+      <view class="role-hero role-hero-teacher">
+        <view class="role-hero-top"><view class="role-hero-icon">师</view><view class="role-hero-action" bind:tap="handleLogout">退出登录</view></view>
+        <view class="role-hero-title">教师工作台</view>
+        <view class="role-hero-text">把今天要做的事安排清楚，孩子的每一次到达都值得被认真记录。</view>
+        <view class="role-hero-tip">{{hasStarted ? '工作台已打开，祝今天顺利！' : '准备开始今天的工作'}}</view>
+      </view>
+
+      <view class="section-head dashboard-heading"><view><view class="section-kicker">机构概览</view><view class="section-title">今日工作底盘</view></view><view class="section-note">{{summaryLoading ? '数据同步中' : '实时数据'}}</view></view>
+      <view class="stat-grid">
+        <view class="stat-card stat-card-green"><view class="stat-icon">学</view><view class="stat-number">{{summary ? summary.students : '--'}}</view><view class="stat-label">学生档案</view></view>
+        <view class="stat-card stat-card-blue"><view class="stat-icon">校</view><view class="stat-number">{{summary ? summary.schools : '--'}}</view><view class="stat-label">学校</view></view>
+        <view class="stat-card stat-card-yellow"><view class="stat-icon">班</view><view class="stat-number">{{summary ? summary.school_classes : '--'}}</view><view class="stat-label">学校班级</view></view>
+        <view class="stat-card stat-card-purple"><view class="stat-icon">托</view><view class="stat-number">{{summary ? summary.care_classes : '--'}}</view><view class="stat-label">托管班</view></view>
+      </view>
+
+      <view class="soft-card work-entry-card">
+        <view class="section-head"><view><view class="section-kicker">快捷入口</view><view class="section-title">今天要做什么</view></view><view class="section-note">3 项工作</view></view>
+        <view class="work-entry-list">
+          <view class="action-card action-card-pickup" bind:tap="handleOpenPickup"><view class="action-icon">接</view><view class="action-copy"><view class="action-title">今日接送</view><view class="action-text">确认名单、点名、拍照记录</view></view><view class="action-arrow">›</view></view>
+          <view class="action-card action-card-homework" bind:tap="handleOpenHomework"><view class="action-icon">作</view><view class="action-copy"><view class="action-title">作业管理</view><view class="action-text">布置作业、逐人批改反馈</view></view><view class="action-arrow">›</view></view>
+          <view class="action-card action-card-application" bind:tap="handleOpenApplications"><view class="action-icon">申</view><view class="action-copy"><view class="action-title">家长申请</view><view class="action-text">审核入班，自动建立绑定</view></view><view class="action-arrow">›</view></view>
+          <view class="action-card action-card-homework" bind:tap="handleOpenMeals"><view class="action-icon">食</view><view class="action-copy"><view class="action-title">餐食管理</view><view class="action-text">录入菜单、上传实际餐食照片</view></view><view class="action-arrow">›</view></view>
+          <view class="action-card action-card-application" bind:tap="handleOpenSummary"><view class="action-icon">结</view><view class="action-copy"><view class="action-title">每日总结</view><view class="action-text">生成、编辑并发布当天托管总结</view></view><view class="action-arrow">›</view></view>
+        </view>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="role-hero role-hero-parent">
+        <view class="role-hero-top"><view class="role-hero-icon">家</view><view class="role-hero-action" bind:tap="handleLogout">退出登录</view></view>
+        <view class="role-hero-title">家长端</view>
+        <view class="role-hero-text">孩子今天怎么样？接送、作业和请假动态都在这里。</view>
+        <view class="role-hero-tip">绑定孩子后，重要变化会及时提醒你</view>
+      </view>
+      <view class="parent-entry-card soft-card"><view class="parent-entry-mark">看</view><view class="parent-entry-copy"><view class="action-title">查看孩子今天的成长动态</view><view class="action-text">校门口接到、到托管班、作业完成情况一目了然</view></view><t-button size="small" theme="primary" bind:tap="handleOpenParent">进入家长端</t-button></view>
+    </block>
+
+    <view class="privacy-note"><view class="privacy-lock">●</view>接送照片和孩子信息仅对授权账号可见</view>
+  </view>
+  <t-toast id="t-toast" />
+</AppPage>

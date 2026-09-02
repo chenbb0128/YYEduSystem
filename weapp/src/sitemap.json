@@ -1,0 +1,10 @@
+{
+  "$schema": "https://vite.icebreaker.top/sitemap.json",
+  "desc": "微信小程序页面索引配置。新增页面后请在 rules 中明确配置。",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "pages/index/index"
+    }
+  ]
+}

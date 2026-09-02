@@ -1,0 +1,5 @@
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - weapp-tailwindcss@5.2.14

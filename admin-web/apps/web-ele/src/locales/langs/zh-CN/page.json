@@ -1,0 +1,62 @@
+{
+  "auth": {
+    "login": "登录",
+    "title": "豆芽成长助手",
+    "description": "陪伴孩子成长，让托管工作更安心",
+    "loginTitle": "欢迎登录",
+    "loginSubtitle": "使用工作账号进入豆芽成长助手"
+  },
+  "dashboard": {
+    "title": "工作台",
+    "welcome": "欢迎回来",
+    "description": "接送、作业和家校协同，都在这里有序完成。",
+    "framework": "前端框架",
+    "uiLibrary": "组件库",
+    "permission": "权限模式",
+    "api": "开发接口",
+    "frontendPermission": "前端路由",
+    "localMock": "本地 Mock",
+    "guideTitle": "接下来可以做什么",
+    "guideDescription": "在 views 中添加业务页面，在 router 中注册路由，并在 api 中接入真实后端。"
+  },
+  "users": {
+    "title": "用户管理",
+    "description": "管理管理员、教师账号及其登录状态。",
+    "search": "查询",
+    "reset": "重置",
+    "keywordPlaceholder": "搜索用户名或姓名",
+    "allStatus": "全部状态",
+    "create": "新增用户",
+    "edit": "编辑",
+    "delete": "删除",
+    "username": "用户名",
+    "realName": "姓名",
+    "role": "角色",
+    "status": "状态",
+    "createdAt": "创建时间",
+    "actions": "操作",
+    "empty": "暂无用户数据",
+    "loadError": "用户数据加载失败，请稍后重试。",
+    "cancel": "取消",
+    "confirm": "确认删除",
+    "save": "保存",
+    "deleteTitle": "删除用户",
+    "confirmDelete": "确认删除用户 {0} 吗？",
+    "createSuccess": "用户创建成功",
+    "updateSuccess": "用户更新成功",
+    "deleteSuccess": "用户删除成功",
+    "usernameRequired": "请输入用户名",
+    "usernameLength": "用户名长度应为 3 至 32 个字符",
+    "realNameRequired": "请输入姓名",
+    "roles": {
+      "admin": "管理员",
+      "editor": "编辑者",
+      "teacher": "教师",
+      "viewer": "查看者"
+    },
+    "statuses": {
+      "active": "启用",
+      "disabled": "停用"
+    }
+  }
+}

@@ -1,0 +1,158 @@
+<view class="page parent-page">
+  <view class="parent-topbar">
+    <view wx:if="{{activeTab !== 'home'}}" class="parent-back" data-tab="home" bind:tap="handleTabChange">‹</view>
+    <view class="parent-branding">
+      <view class="parent-brand-mark">芽</view>
+      <view class="parent-brand-copy">
+        <view class="parent-brand-title">星芽托管助手</view>
+        <view class="parent-brand-caption">安心托管，成长可见</view>
+      </view>
+    </view>
+    <view class="parent-notification" data-tab="mine" bind:tap="handleTabChange">
+      <view class="parent-notification-icon">铃</view>
+      <view wx:if="{{notificationUnreadCount}}" class="parent-notification-count">{{notificationUnreadCount}}</view>
+    </view>
+  </view>
+
+  <view class="parent-page-heading">
+    <view class="parent-page-title">
+      <block wx:if="{{activeTab === 'home'}}">今天，孩子怎么样</block>
+      <block wx:elif="{{activeTab === 'dynamic'}}">孩子动态</block>
+      <block wx:elif="{{activeTab === 'apply'}}">孩子入班申请</block>
+      <block wx:else>我的</block>
+    </view>
+    <view class="parent-page-caption">{{loading ? '正在同步孩子的最新信息…' : '只展示当前账号已授权的孩子信息'}}</view>
+    <view wx:if="{{dynamicLoadNotice}}" class="warning-note parent-load-warning">{{dynamicLoadNotice}}</view>
+  </view>
+
+  <block wx:if="{{!bound}}">
+    <view class="parent-unbound-card">
+      <view class="parent-unbound-orbit">芽</view>
+      <view class="parent-unbound-title">先绑定孩子，再开始查看</view>
+      <view class="parent-unbound-text">绑定后可以看到接送照片、到班时间、作业完成情况和老师每日总结。</view>
+      <t-button block theme="primary" data-tab="apply" bind:tap="handleTabChange">去提交入班申请</t-button>
+    </view>
+
+    <view wx:if="{{activeTab === 'apply'}}" class="parent-apply-panel">
+      <view class="apply-stepper">
+        <view class="apply-step apply-step-current"><view class="apply-step-number">1</view><view>填写资料</view></view>
+        <view class="apply-step-line"></view>
+        <view class="apply-step"><view class="apply-step-number">2</view><view>提交申请</view></view>
+        <view class="apply-step-line"></view>
+        <view class="apply-step"><view class="apply-step-number">3</view><view>老师审核</view></view>
+        <view class="apply-step-line"></view>
+        <view class="apply-step"><view class="apply-step-number">4</view><view>绑定成功</view></view>
+      </view>
+      <view class="form-card add-child-card">
+        <view class="section-head"><view><view class="section-kicker">填写资料</view><view class="section-title">添加孩子</view></view><view class="section-note">提交后由老师审核</view></view>
+        <view class="muted-text intro-copy">审核通过后会自动建立学生档案并绑定到当前家长账号，不需要学生编号。</view>
+        <view wx:if="{{invitedSchoolClassID}}" class="success-note"><view class="success-note-icon">✓</view><view>已通过老师邀请链接进入，学校和班级信息已带入。</view></view>
+        <view class="form-field"><text class="field-label">孩子姓名</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'childName' ? '' : '请输入孩子姓名'}}" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        <block wx:if="{{!invitedSchoolClassID}}">
+          <view class="form-field"><text class="field-label">学校</text><view class="field-control"><input class="field-input" maxlength="128" placeholder="{{focusedField === 'schoolName' ? '' : '例如：实验小学'}}" data-field="schoolName" value="{{schoolName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+          <view class="form-field"><text class="field-label">年级和班级</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'classText' ? '' : '例如：一年级2班'}}" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        </block>
+        <view class="form-field"><text class="field-label">家长手机号</text><view class="field-control"><input class="field-input" type="number" maxlength="32" placeholder="{{focusedField === 'guardianPhone' ? '' : '请输入家长手机号'}}" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        <view class="form-field"><text class="field-label">家长称呼（可选）</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'guardianName' ? '' : '例如：王女士'}}" data-field="guardianName" value="{{guardianName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        <view class="form-field"><text class="field-label">与孩子关系</text><view class="field-control"><input class="field-input" maxlength="32" placeholder="{{focusedField === 'relationship' ? '' : '例如：妈妈、爸爸'}}" value="{{relationship}}" data-field="relationship" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        <view wx:if="{{editingApplicationID}}" class="warning-note form-note">这是补充资料，提交后会回到老师审核队列。</view>
+        <view class="form-field"><text class="field-label">补充说明（可选）</text><textarea class="field-textarea" maxlength="500" placeholder="{{focusedField === 'applicationNotes' ? '' : '如有特殊情况可在这里说明'}}" data-field="applicationNotes" value="{{applicationNotes}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+        <view class="form-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitApplication">提交审核</t-button></view>
+      </view>
+    </view>
+    <view wx:elif="{{activeTab !== 'apply'}}" class="parent-unbound-hint">
+      <view class="parent-unbound-hint-title">申请记录会显示在这里</view>
+      <view class="parent-unbound-hint-text">提交入班申请后，可以在“申请”中查看老师审核进度。</view>
+    </view>
+  </block>
+
+  <block wx:elif="{{bound}}">
+    <block wx:if="{{activeTab === 'home'}}">
+      <view class="home-child-card">
+        <view class="home-child-info">
+          <view class="parent-child-avatar">{{selectedStudentName}}</view>
+        <view class="home-child-copy"><view class="home-child-name">{{selectedStudentName}}</view><view class="home-child-class">{{pickupToday ? pickupToday.class_label : selectedStudentClassLabel}}</view></view>
+        </view>
+        <view class="home-child-status {{pickupToday && (pickupToday.student_status === 'abnormal' || pickupToday.student_status === 'not_arrived') ? 'status-tone-danger' : 'status-tone-success'}}">{{pickupToday ? pickupToday.status_label : '今日安排待确认'}}</view>
+      </view>
+
+      <view wx:if="{{children.length > 1}}" class="child-switch-bar">
+        <view class="child-switch-title">查看孩子</view>
+        <scroll-view scroll-x="true" class="child-switch-scroll">
+          <view wx:for="{{children}}" wx:key="student_id" class="child-switch-item {{selectedStudentID === item.student_id ? 'child-switch-item-active' : ''}}" data-student-id="{{item.student_id}}" bind:tap="handleSelectChild"><view class="child-switch-avatar">{{item.student_name}}</view><view>{{item.student_name}}</view></view>
+        </scroll-view>
+      </view>
+
+      <view class="parent-section-label"><view>今日信息</view><text>{{date}}</text></view>
+      <view class="parent-info-grid">
+        <view class="parent-info-card parent-info-pickup" data-tab="dynamic" bind:tap="handleTabChange"><view class="info-card-head"><view class="info-card-title">今日接送</view><view class="info-card-icon">接</view></view><view class="info-card-value">{{pickupToday ? pickupToday.status_label : '等待安排'}}</view><view class="info-card-note">{{pickupToday && pickupToday.expected_pickup_time ? '预计接送 ' + pickupToday.expected_pickup_time : '老师确认后会显示时间'}}</view></view>
+        <view class="parent-info-card parent-info-meal" data-tab="dynamic" bind:tap="handleTabChange"><view class="info-card-head"><view class="info-card-title">今日餐食</view><view class="info-card-icon">食</view></view><view class="info-card-value info-card-value-multi">{{meals.length ? meals[0].menu_text : '暂未登记菜单'}}</view><view class="info-card-note">{{meals.length > 1 ? '还有 ' + (meals.length - 1) + ' 条餐食记录' : '查看餐食详情'}}</view></view>
+        <view class="parent-info-card parent-info-homework" data-tab="dynamic" bind:tap="handleTabChange"><view class="info-card-head"><view class="info-card-title">今日作业</view><view class="info-card-icon">作</view></view><view class="info-card-value">{{homework.length ? homework.length + ' 条记录' : '暂无作业'}}</view><view class="info-card-note">{{homework.length ? '点击查看完成情况' : '老师布置后会显示'}}</view></view>
+        <view class="parent-info-card parent-info-summary" data-tab="dynamic" bind:tap="handleTabChange"><view class="info-card-head"><view class="info-card-title">教师总结</view><view class="info-card-icon">总</view></view><view class="info-card-value">{{dailySummary ? '今日总结已发布' : '等待老师发布'}}</view><view class="info-card-note">{{dailySummary ? '查看孩子今天的表现' : '发布后会及时提醒'}}</view></view>
+      </view>
+
+      <view class="parent-quick-card">
+        <view class="section-head"><view><view class="section-kicker">快捷入口</view><view class="section-title">需要时，点这里</view></view><view class="section-note">常用功能</view></view>
+        <view class="parent-quick-grid"><view class="parent-quick-item quick-green" data-tab="dynamic" bind:tap="handleTabChange"><view class="parent-quick-icon">动</view><view>看动态</view></view><view class="parent-quick-item quick-blue" data-tab="apply" bind:tap="handleTabChange"><view class="parent-quick-icon">申</view><view>入班申请</view></view><view class="parent-quick-item quick-orange" data-tab="dynamic" bind:tap="handleTabChange"><view class="parent-quick-icon">请</view><view>接送变更</view></view><view class="parent-quick-item quick-yellow" data-tab="mine" bind:tap="handleTabChange"><view class="parent-quick-icon">我</view><view>我的设置</view></view></view>
+      </view>
+
+      <view class="home-notice-card"><view class="home-notice-mark">i</view><view><view class="home-notice-title">信息仅对当前账号可见</view><view class="home-notice-text">接送照片、作业和老师总结会随孩子选择同步更新。</view></view></view>
+    </block>
+
+    <block wx:elif="{{activeTab === 'dynamic'}}">
+      <view class="dynamic-child-card"><view class="parent-child-avatar">{{selectedStudentName}}</view><view class="dynamic-child-copy"><view class="dynamic-child-name">{{selectedStudentName}}</view><view class="dynamic-child-meta">{{selectedStudentClassLabel}} · {{date}} · 今日托管时间线</view></view><view class="status-pill status-tone-success">已绑定</view></view>
+
+      <view class="content-card timeline-card dynamic-card">
+        <view class="section-head"><view><view class="section-kicker">今日托管时间线</view><view class="section-title">每一步都安心可见</view></view><view class="section-note">{{events.length ? events.length + ' 条记录' : '等待记录'}}</view></view>
+        <block wx:if="{{events.length}}"><view wx:for="{{events}}" wx:key="id" class="event-row"><view class="event-rail"><view class="event-dot {{item.event_type === 'abnormal' || item.event_type === 'not_arrived' ? 'event-dot-danger' : item.event_type === 'arrived' || item.event_type === 'picked_up' || item.event_type === 'left' ? 'event-dot-success' : 'event-dot-warning'}}"></view><view wx:if="{{index < events.length - 1}}" class="event-rail-line"></view></view><image wx:if="{{item.photo_url_signed}}" class="event-photo" mode="aspectFill" src="{{item.photo_url_signed}}" /><view wx:else class="event-photo event-photo-placeholder">芽</view><view class="event-content"><view class="event-title-line"><text class="event-title">{{item.status_label}}</text><text class="event-time">{{item.event_at}}</text></view><view class="event-meta">{{item.operator_name || '老师'}} 已记录</view><view wx:if="{{item.note}}" class="event-note">{{item.note}}</view></view></view></block><view wx:else class="parent-inline-empty"><view class="parent-inline-empty-icon">○</view><view>暂时还没有接送动态</view><text>老师完成点名后，状态和照片会出现在这里</text></view>
+      </view>
+
+      <view wx:if="{{dailySummary}}" class="content-card daily-summary-parent-card dynamic-card"><view class="section-head"><view><view class="section-kicker">托管回顾</view><view class="section-title">教师每日总结</view></view><view class="status-pill status-tone-success">已发布</view></view><view class="summary-parent-text">{{dailySummary.content}}</view><view wx:if="{{dailySummaryChildUpdate}}" class="record-note">关于 {{selectedStudentName}}：{{dailySummaryChildUpdate}}</view></view>
+
+      <view class="content-card homework-card dynamic-card"><view class="section-head"><view><view class="section-kicker">学习反馈</view><view class="section-title">{{selectedStudentName}} 的作业</view></view><view class="section-note">最近记录</view></view><block wx:if="{{homework.length}}"><view wx:for="{{homework}}" wx:key="task_id" class="homework-row"><view class="event-title-line"><text class="event-title">{{item.subject}}</text><text class="status-badge {{item.status_class}}">{{item.status_label}}</text></view><view class="event-meta">{{item.homework_date}} · {{item.creator_name || '老师'}}</view><view class="homework-content">{{item.content}}</view><view wx:if="{{item.attachment_urls_signed.length}}" class="photo-strip"><image wx:for="{{item.attachment_urls_signed}}" wx:for-item="attachment" wx:key="*this" class="homework-photo" mode="aspectFill" src="{{attachment}}" /></view><view wx:if="{{item.correction_note}}" class="record-note">老师意见：{{item.correction_note}}</view></view></block><view wx:else class="parent-inline-empty"><view>暂时没有作业记录</view><text>老师布置后会在这里看到完成情况</text></view></view>
+
+      <view class="dynamic-two-column"><view class="content-card meal-parent-card dynamic-card"><view class="section-head"><view><view class="section-kicker">生活照顾</view><view class="section-title">今日餐食</view></view><view class="section-note">{{date}}</view></view><block wx:if="{{meals.length}}"><view wx:for="{{meals}}" wx:key="id" class="meal-parent-row"><view class="menu-text">{{item.menu_text}}</view><image wx:if="{{item.photo_url_signed}}" class="meal-parent-photo" mode="aspectFill" src="{{item.photo_url_signed}}" /><view wx:if="{{item.adjustment_note}}" class="record-note">临时调整：{{item.adjustment_note}}</view><view class="record-meta">更新于 {{item.updated_at}}</view></view></block><view wx:else class="parent-inline-empty"><view>老师还没有登记餐食</view></view></view><view class="content-card meal-parent-card dynamic-card"><view class="section-head"><view><view class="section-kicker">提前预告</view><view class="section-title">明日餐食</view></view><view class="section-note">{{tomorrowDate}}</view></view><block wx:if="{{tomorrowMeals.length}}"><view wx:for="{{tomorrowMeals}}" wx:key="id" class="meal-parent-row"><view class="menu-text">{{item.menu_text}}</view><image wx:if="{{item.photo_url_signed}}" class="meal-parent-photo" mode="aspectFill" src="{{item.photo_url_signed}}" /><view wx:if="{{item.adjustment_note}}" class="record-note">临时调整：{{item.adjustment_note}}</view><view class="record-meta">更新于 {{item.updated_at}}</view></view></block><view wx:else class="parent-inline-empty"><view>暂未发布明日菜单</view></view></view></view>
+      <view class="content-card diet-note-parent-card dynamic-card"><view class="section-head"><view><view class="section-kicker">饮食照顾</view><view class="section-title">过敏和特殊饮食</view></view><t-button size="small" variant="outline" loading="{{dietNoteSaving}}" bind:tap="handleEditDietNote">{{dietNoteRequests.length && dietNoteRequests[0].status === 'pending' ? '审核中' : dietNote ? '申请修改' : '提交备注'}}</t-button></view><view class="diet-note-parent-text {{dietNote ? '' : 'diet-note-parent-text-empty'}}">{{dietNote || '还没有已确认的饮食备注'}}</view><view wx:if="{{dietNoteRequests.length && dietNoteRequests[0].status === 'pending'}}" class="diet-note-request-pending">变更申请审核中：{{dietNoteRequests[0].requested_note || '申请清除备注'}}</view><view wx:elif="{{dietNoteRequests.length && dietNoteRequests[0].status === 'rejected'}}" class="diet-note-request-rejected">上次申请未通过{{dietNoteRequests[0].review_note ? '：' + dietNoteRequests[0].review_note : ''}}</view><view class="record-meta">家长提交后不会立即替换正式备注，老师确认后才会生效；仅用于托管照顾，不替代医疗诊断。</view></view>
+
+      <view class="content-card meal-history-parent-card dynamic-card"><view class="section-head"><view><view class="section-kicker">餐食记录</view><view class="section-title">近 7 天餐食</view></view><view class="section-note">按日期保存</view></view><block wx:if="{{mealHistory.length}}"><view wx:for="{{mealHistory}}" wx:key="id" class="meal-history-parent-row"><view class="meal-history-parent-date">{{item.meal_date}}</view><view class="meal-history-parent-menu">{{item.menu_text}}</view><view wx:if="{{item.adjustment_note}}" class="record-note">调整：{{item.adjustment_note}}</view><image wx:if="{{item.photo_url_signed}}" class="meal-history-parent-photo" mode="aspectFill" src="{{item.photo_url_signed}}" /></view></block><view wx:else class="parent-inline-empty"><view>还没有历史餐食记录</view><text>老师发布后会自动保留</text></view></view>
+
+      <view class="form-card change-card dynamic-card"><view class="section-head"><view><view class="section-kicker">临时安排</view><view class="section-title">接送变更</view></view><view class="section-note">先通知老师</view></view><view class="muted-text intro-copy">临时变化提交后会同步到老师工作台，确认后更新接送名单。</view><view class="change-options"><view class="change-option {{changeStatus === 'parent_picked_up' ? 'change-option-active' : ''}}" data-status="parent_picked_up" bind:tap="handleSetChangeStatus"><view class="change-option-icon">接</view>家长接走</view><view class="change-option {{changeStatus === 'self_arrived' ? 'change-option-active' : ''}}" data-status="self_arrived" bind:tap="handleSetChangeStatus"><view class="change-option-icon">到</view>自行到班</view><view class="change-option {{changeStatus === 'absent' ? 'change-option-active' : ''}}" data-status="absent" bind:tap="handleSetChangeStatus"><view class="change-option-icon">休</view>今天不去</view></view><view class="form-field"><textarea class="field-textarea" maxlength="500" placeholder="{{focusedField === 'changeNote' ? '' : '例如：今天由妈妈 17:30 到机构接走'}}" data-field="changeNote" value="{{changeNote}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view><view class="form-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitPickupChange">提交临时变更</t-button></view></view>
+
+      <view class="form-card leave-card dynamic-card"><view class="section-head"><view><view class="section-kicker">家庭安排</view><view class="section-title">提交请假</view></view><view class="section-note">提前告知老师</view></view><view class="form-field"><text class="field-label">请假日期</text><view class="field-control"><input class="field-input" type="date" data-field="leaveDate" value="{{leaveDate}}" bindinput="handleInput" /></view></view><view class="form-field"><text class="field-label">请假原因</text><textarea class="field-textarea" maxlength="500" placeholder="{{focusedField === 'leaveReason' ? '' : '例如：发烧在家休息'}}" data-field="leaveReason" value="{{leaveReason}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view><view class="form-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitLeave">提交请假</t-button></view></view>
+    </block>
+
+    <block wx:elif="{{activeTab === 'apply'}}">
+      <view class="apply-stepper">
+        <view class="apply-step apply-step-current"><view class="apply-step-number">1</view><view>填写资料</view></view><view class="apply-step-line"></view><view class="apply-step"><view class="apply-step-number">2</view><view>提交申请</view></view><view class="apply-step-line"></view><view class="apply-step"><view class="apply-step-number">3</view><view>老师审核</view></view><view class="apply-step-line"></view><view class="apply-step"><view class="apply-step-number">4</view><view>绑定成功</view></view>
+      </view>
+      <view class="form-card add-child-card">
+        <view class="section-head"><view><view class="section-kicker">家庭信息</view><view class="section-title">添加孩子</view></view><view class="section-note">提交后由老师审核</view></view>
+        <view class="muted-text intro-copy">审核通过后会自动建立学生档案并绑定到当前家长账号，不需要学生编号。</view>
+        <view wx:if="{{invitedSchoolClassID}}" class="success-note"><view class="success-note-icon">✓</view><view>已通过老师邀请链接进入，学校和班级信息已带入。</view></view>
+        <view class="form-field"><text class="field-label">孩子姓名</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'childName' ? '' : '请输入孩子姓名'}}" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+        <block wx:if="{{!invitedSchoolClassID}}"><view class="form-field"><text class="field-label">学校</text><view class="field-control"><input class="field-input" maxlength="128" placeholder="{{focusedField === 'schoolName' ? '' : '例如：实验小学'}}" data-field="schoolName" value="{{schoolName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view><view class="form-field"><text class="field-label">年级和班级</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'classText' ? '' : '例如：一年级2班'}}" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view></block>
+        <view class="form-field"><text class="field-label">家长手机号</text><view class="field-control"><input class="field-input" type="number" maxlength="32" placeholder="{{focusedField === 'guardianPhone' ? '' : '请输入家长手机号'}}" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view><view class="form-field"><text class="field-label">家长称呼（可选）</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'guardianName' ? '' : '例如：王女士'}}" data-field="guardianName" value="{{guardianName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view><view class="form-field"><text class="field-label">与孩子关系</text><view class="field-control"><input class="field-input" maxlength="32" placeholder="{{focusedField === 'relationship' ? '' : '例如：妈妈、爸爸'}}" value="{{relationship}}" data-field="relationship" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view><view wx:if="{{editingApplicationID}}" class="warning-note form-note">这是补充资料，提交后会回到老师审核队列。</view><view class="form-field"><text class="field-label">补充说明（可选）</text><textarea class="field-textarea" maxlength="500" placeholder="{{focusedField === 'applicationNotes' ? '' : '如有特殊情况可在这里说明'}}" data-field="applicationNotes" value="{{applicationNotes}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view><view class="form-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitApplication">提交审核</t-button></view>
+      </view>
+      <view wx:if="{{applications.length}}" class="content-card application-record-card"><view class="section-head"><view><view class="section-kicker">申请进度</view><view class="section-title">我的申请记录</view></view><view class="section-note">{{applications.length}} 条</view></view><view wx:for="{{applications}}" wx:key="id" class="record-row"><view class="record-main"><view class="record-title-line"><text class="record-title">{{item.student_name}}</text><text class="status-pill {{item.status === 'needs_info' ? 'status-tone-warning' : item.status === 'rejected' ? 'status-tone-danger' : item.status === 'approved' ? 'status-tone-success' : ''}}">{{item.status_label}}</text></view><view class="record-meta">{{item.school_name_input}} {{item.grade_input}}{{item.class_name_input}}</view><view wx:if="{{item.review_note}}" class="record-note">老师备注：{{item.review_note}}</view><view wx:if="{{item.status === 'needs_info'}}" class="record-action"><t-button size="small" variant="outline" data-application-id="{{item.id}}" bind:tap="handleResubmitApplication">修改并重提</t-button></view></view></view></view>
+    </block>
+
+    <block wx:else>
+      <view class="mine-profile-hero"><view class="mine-profile-avatar">{{children.length ? selectedStudentName : '家'}}</view><view class="mine-profile-copy"><view class="mine-profile-name">家长账号</view><view class="mine-profile-note">已登录 · 仅展示授权孩子信息</view></view><view class="mine-profile-status">✓ 安心使用</view></view>
+      <view class="content-card child-list-card mine-card"><view class="section-head"><view><view class="section-kicker">家庭成员</view><view class="section-title">我的孩子</view></view><view class="section-note">{{children.length}} 人</view></view><view class="mine-child-list"><view wx:for="{{children}}" wx:key="student_id" class="mine-child-row" data-student-id="{{item.student_id}}" bind:tap="handleSelectChild"><view class="child-avatar">{{item.student_name}}</view><view class="mine-child-copy"><view class="child-name">{{item.student_name}}</view><view class="child-state">{{item.school_name || '学校待同步'}} {{item.grade}}{{item.class_name}} · {{selectedStudentID === item.student_id ? '当前查看' : '点击切换'}}</view></view><view class="mine-child-arrow">›</view></view></view></view>
+      <view class="content-card notification-card mine-card"><view class="section-head"><view><view class="section-kicker">消息设置</view><view class="section-title">通知中心</view></view><t-button wx:if="{{subscriptionConfigured}}" size="small" variant="outline" loading="{{subscriptionLoading}}" bind:tap="handleEnableNotifications">{{subscriptions.length ? '更新授权' : '开启通知'}}</t-button></view><view wx:if="{{subscriptionConfigured}}" class="muted-text intro-copy">微信授权只影响提醒方式，不影响业务记录；即使未授权，也可以在这里查看站内通知。</view><view wx:else class="subscription-empty">当前尚未配置微信订阅消息模板，站内通知仍可正常查看；管理员配置后即可开启微信提醒。</view><view wx:if="{{subscriptions.length}}" class="subscription-status-list"><view wx:for="{{subscriptions}}" wx:key="kind" class="subscription-status-row"><view class="subscription-status-copy"><view class="subscription-status-title">{{item.kind_label}}</view><view class="subscription-status-detail">{{item.detail}}</view></view><text class="status-pill {{item.status_class}}">{{item.status_label}}</text></view></view><view wx:elif="{{subscriptionConfigured}}" class="subscription-empty">点击“开启通知”后，在微信弹窗中选择需要接收的提醒。</view><block wx:if="{{notifications.length}}"><view wx:for="{{notifications}}" wx:key="id" class="notification-row {{item.read_at ? 'notification-read' : ''}}" data-notification-id="{{item.id}}" bind:tap="handleMarkNotificationRead"><view class="notification-main"><view class="notification-title">{{item.title}}<text wx:if="{{!item.read_at}}" class="unread-dot">未读</text></view><view class="notification-text">{{item.content}}</view><view class="record-meta">{{item.created_at}}</view></view></view><view wx:if="{{notificationHasMore}}" class="notification-more"><t-button size="small" variant="outline" loading="{{notificationLoadingMore}}" bind:tap="handleLoadMoreNotifications">加载更多消息</t-button></view></block><view wx:else class="parent-inline-empty"><view>暂时没有消息</view><text>新的接送和作业动态会在这里提醒</text></view></view>
+      <view class="content-card record-card mine-card"><view class="section-head"><view><view class="section-kicker">家庭安排</view><view class="section-title">请假记录</view></view><view class="section-note">历史记录</view></view><block wx:if="{{leaves.length}}"><view wx:for="{{leaves}}" wx:key="id" class="record-row"><view class="record-main"><view class="record-title-line"><text class="record-title">{{item.leave_date}}</text><text class="status-badge {{item.status === 'approved' ? 'status-tone-success' : item.status === 'rejected' ? 'status-tone-danger' : item.status === 'pending' ? 'status-tone-warning' : 'status-tone-muted'}}">{{item.status_label}}</text></view><view class="record-meta">{{item.reason}}</view><view wx:if="{{item.teacher_note}}" class="record-note">老师：{{item.teacher_note}}</view><view wx:if="{{item.status === 'pending'}}" class="record-action"><t-button size="small" variant="outline" data-leave-id="{{item.id}}" bind:tap="handleEditLeave">修改原因</t-button><t-button size="small" variant="outline" data-leave-id="{{item.id}}" bind:tap="handleCancelLeave">撤回</t-button></view></view></view></block><view wx:else class="parent-inline-empty"><view>还没有请假记录</view><text>需要请假时可在孩子动态中提交</text></view></view>
+      <view class="mine-security-card"><view class="mine-security-icon">✓</view><view><view class="mine-security-title">账号安全</view><view class="mine-security-text">孩子信息和接送照片仅对当前授权账号可见</view></view><view class="mine-security-arrow">›</view></view>
+    </block>
+  </block>
+
+  <view class="parent-tabbar">
+    <view class="parent-tabbar-item {{activeTab === 'home' ? 'parent-tabbar-item-active' : ''}}" data-tab="home" bind:tap="handleTabChange"><view class="parent-tabbar-icon">⌂</view><view>首页</view></view>
+    <view class="parent-tabbar-item {{activeTab === 'dynamic' ? 'parent-tabbar-item-active' : ''}}" data-tab="dynamic" bind:tap="handleTabChange"><view class="parent-tabbar-icon">动</view><view>动态</view></view>
+    <view class="parent-tabbar-item {{activeTab === 'apply' ? 'parent-tabbar-item-active' : ''}}" data-tab="apply" bind:tap="handleTabChange"><view class="parent-tabbar-icon">申</view><view>申请</view></view>
+    <view class="parent-tabbar-item {{activeTab === 'mine' ? 'parent-tabbar-item-active' : ''}}" data-tab="mine" bind:tap="handleTabChange"><view class="parent-tabbar-icon">我</view><view>我的</view></view>
+  </view>
+
+  <view class="privacy-note"><view class="privacy-lock">●</view>孩子信息仅对当前授权账号可见</view>
+  <view wx:if="{{privacyConsentVisible}}" class="privacy-consent-mask"><view class="privacy-consent-sheet"><view class="privacy-consent-icon">芽</view><view class="privacy-consent-title">请先阅读并同意隐私说明</view><view class="privacy-consent-text">为了提供接送考勤、作业反馈、餐食和通知服务，星芽托管助手会处理孩子姓名、学校班级、托管记录及家长联系方式。信息仅用于机构托管照护和与您沟通，不对外公开，也不用于刷脸、AI分析或收费服务。</view><view class="privacy-consent-text">您可以在家长端查看自己的孩子信息；饮食过敏备注会在老师确认后生效。当前协议版本：{{privacyPolicyVersion || '待加载'}}</view><view wx:if="{{privacyConsentError}}" class="warning-note privacy-consent-error">{{privacyConsentError}}</view><t-button wx:if="{{privacyConsentError}}" block variant="outline" loading="{{privacyConsentLoading}}" bind:tap="handleRetryPrivacyConsent">重新加载隐私说明</t-button><t-button wx:else block theme="primary" loading="{{privacyConsentLoading}}" bind:tap="handleAcceptPrivacyConsent">同意并继续使用</t-button></view></view>
+  <t-toast id="t-toast" />
+</view>

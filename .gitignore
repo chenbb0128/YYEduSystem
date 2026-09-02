@@ -1,0 +1,37 @@
+# Dependencies and generated outputs
+**/node_modules/
+**/.pnpm-store/
+**/dist/
+**/build/
+**/bin/
+**/.weapp-vite/
+**/miniprogram_npm/
+**/coverage/
+**/.cache/
+**/.vite/
+**/.turbo/
+**/.tmp/
+**/data/
+**/logs/
+
+# Local settings and secrets
+**/.env
+**/.env.*
+!**/.env.example
+**/project.private.config.json
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+
+# Editor and OS files
+**/.git/
+**/.idea/
+**/.vscode/
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+**/*.tsbuildinfo
+**/.eslintcache
+**/.stylelintcache

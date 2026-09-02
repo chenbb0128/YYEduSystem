@@ -1,0 +1,421 @@
+.pickup-page {
+  padding-bottom: 100rpx;
+}
+
+.pickup-header {
+  margin-bottom: 28rpx;
+}
+
+.pickup-summary-card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: 154rpx;
+  padding: 26rpx 24rpx;
+  margin-bottom: 18rpx;
+  background: linear-gradient(135deg, #eef9f2, #eff8ff);
+  border: 1rpx solid #d7ebdf;
+  border-radius: 28rpx;
+}
+
+.summary-date {
+  flex: 1;
+  min-width: 0;
+}
+
+.summary-date-label,
+.summary-stat-label {
+  font-size: 21rpx;
+  color: #78918a;
+}
+
+.summary-date-value {
+  margin-top: 10rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #2d5a49;
+}
+
+.summary-divider {
+  width: 1rpx;
+  height: 70rpx;
+  margin: 0 22rpx;
+  background: #cfe5d7;
+}
+
+.summary-stat {
+  min-width: 86rpx;
+  text-align: center;
+}
+
+.summary-stat-number {
+  font-size: 36rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #327ca9;
+}
+
+.summary-stat-label {
+  margin-top: 8rpx;
+  white-space: nowrap;
+}
+
+.summary-stat-alert .summary-stat-number {
+  color: #d29026;
+}
+
+.header-actions,
+.task-footer,
+.student-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  align-items: center;
+}
+
+.header-actions {
+  justify-content: flex-end;
+  margin-bottom: 24rpx;
+}
+
+.alert-card {
+  margin-bottom: 24rpx;
+}
+
+.alert-title {
+  display: flex;
+  gap: 12rpx;
+  align-items: center;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.alert-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38rpx;
+  height: 38rpx;
+  font-size: 22rpx;
+  color: #fff;
+  background: #efb94c;
+  border-radius: 50%;
+}
+
+.alert-item {
+  padding-top: 14rpx;
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  border-top: 1rpx solid #ffedbb;
+}
+
+.change-request-item {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 14rpx 0;
+  border-top: 1rpx solid rgb(121 83 39 / 12%);
+}
+
+.change-request-item:first-of-type {
+  border-top: 0;
+}
+
+.change-request-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.change-request-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #513718;
+}
+
+.change-request-note,
+.change-request-meta {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  line-height: 1.5;
+  color: #7f6b55;
+}
+
+.change-request-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8rpx;
+}
+
+.pickup-task-card {
+  box-sizing: border-box;
+  padding: 30rpx;
+  margin-bottom: 24rpx;
+  background: rgb(255 255 255 / 97%);
+  border: 1rpx solid #e0eee4;
+  border-radius: 28rpx;
+  box-shadow: 0 14rpx 34rpx rgb(45 91 68 / 7%);
+}
+
+.task-card-header {
+  display: flex;
+  gap: 20rpx;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.task-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 31rpx;
+  font-weight: 700;
+  color: #29463e;
+  white-space: nowrap;
+}
+
+.task-meta {
+  margin-top: 9rpx;
+  font-size: 22rpx;
+  color: #849a92;
+}
+
+.task-progress {
+  display: flex;
+  gap: 10rpx;
+  align-items: center;
+  padding: 16rpx 18rpx;
+  margin-top: 24rpx;
+  background: #f7fbf8;
+  border-radius: 16rpx;
+}
+
+.task-progress-dot {
+  width: 12rpx;
+  height: 12rpx;
+  background: #44b978;
+  border-radius: 50%;
+}
+
+.task-progress-dot-overdue {
+  background: #e17c3e;
+  box-shadow: 0 0 0 6rpx #fff0e7;
+}
+
+.task-progress-text {
+  font-size: 22rpx;
+  color: #668278;
+}
+
+.student-list {
+  margin-top: 12rpx;
+}
+
+.student-row {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #edf3ef;
+}
+
+.student-row:last-child {
+  border-bottom: 0;
+}
+
+.student-top {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.student-identity {
+  display: flex;
+  flex: 1;
+  gap: 14rpx;
+  align-items: center;
+  min-width: 0;
+}
+
+.student-avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 58rpx;
+  height: 58rpx;
+  overflow: hidden;
+  font-size: 20rpx;
+  color: #327ca9;
+  background: #e5f4ff;
+  border-radius: 18rpx;
+}
+
+.student-copy {
+  min-width: 0;
+}
+
+.student-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #315148;
+  white-space: nowrap;
+}
+
+.student-meta {
+  margin-top: 7rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 21rpx;
+  color: #8ba098;
+  white-space: nowrap;
+}
+
+.student-status {
+  margin-top: 2rpx;
+}
+
+.temporary-tag {
+  display: inline-block;
+  padding: 3rpx 9rpx;
+  margin-left: 8rpx;
+  font-size: 18rpx;
+  font-weight: 500;
+  vertical-align: middle;
+  color: #a96c12;
+  background: #fff3cf;
+  border-radius: 999rpx;
+}
+
+.student-profile-action,
+.student-actions {
+  margin-top: 16rpx;
+}
+
+.student-correction-action {
+  margin-top: 12rpx;
+}
+
+.student-actions {
+  padding-top: 16rpx;
+  border-top: 1rpx dashed #e4eee8;
+}
+
+.task-footer {
+  justify-content: flex-end;
+  padding-top: 24rpx;
+  margin-top: 4rpx;
+  border-top: 1rpx solid #edf3ef;
+}
+
+.empty-state {
+  margin-top: 8rpx;
+}
+
+.empty-illustration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 74rpx;
+  height: 74rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #269b60;
+  background: #e4f7e9;
+  border-radius: 24rpx 24rpx 24rpx 10rpx;
+}
+
+/* 今日接送：日期与班级任务优先，名单区域以清晰的卡片和状态标签承载操作。 */
+.pickup-page {
+  background: #f9f5e8;
+}
+
+.pickup-page .pickup-summary-card {
+  background: #edf4ff;
+  border-color: #dbe8ff;
+  border-radius: 32rpx;
+}
+
+.pickup-page .summary-date-label,
+.pickup-page .summary-stat-label {
+  color: #666;
+}
+
+.pickup-page .summary-date-value,
+.pickup-page .summary-stat-number {
+  color: #165dff;
+}
+
+.pickup-page .summary-divider {
+  background: #c7d7f3;
+}
+
+.pickup-page .summary-stat-alert .summary-stat-number {
+  color: #c27c1a;
+}
+
+.pickup-page .alert-card {
+  background: #fff9e7;
+  border-color: #f3dfaa;
+  border-radius: 28rpx;
+}
+
+.pickup-page .alert-title,
+.pickup-page .change-request-title {
+  color: #4d4030;
+}
+
+.pickup-page .change-request-note,
+.pickup-page .change-request-meta {
+  color: #7d6a51;
+}
+
+.pickup-page .pickup-task-card {
+  background: #fff;
+  border-color: #eee7d7;
+  border-radius: 32rpx;
+  box-shadow: 0 14rpx 34rpx rgb(86 78 45 / 8%);
+}
+
+.pickup-page .task-title,
+.pickup-page .student-name {
+  color: #30343b;
+}
+
+.pickup-page .task-meta,
+.pickup-page .student-meta,
+.pickup-page .task-progress-text {
+  color: #666;
+}
+
+.pickup-page .task-progress {
+  background: #fcf7e8;
+}
+
+.pickup-page .task-progress-dot {
+  background: #165dff;
+}
+
+.pickup-page .student-row,
+.pickup-page .task-footer {
+  border-color: #eee7d7;
+}
+
+.pickup-page .student-avatar {
+  color: #165dff;
+  background: #eef4ff;
+}
+
+.pickup-page .student-actions {
+  border-top-color: #e6e1d5;
+}
+
+.pickup-page .empty-illustration {
+  color: #165dff;
+  background: #dbe8ff;
+}

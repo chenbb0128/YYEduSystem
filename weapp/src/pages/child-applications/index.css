@@ -1,0 +1,312 @@
+.applications-page {
+  padding-bottom: 100rpx;
+}
+
+.review-guide {
+  box-sizing: border-box;
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  background: linear-gradient(135deg, #f3efff, #eef8ff);
+  border: 1rpx solid #e0d9f8;
+  border-radius: 24rpx;
+}
+
+.review-guide-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #7250a8;
+  background: #e9e0ff;
+  border-radius: 20rpx;
+}
+
+.review-guide-copy {
+  min-width: 0;
+}
+
+.review-guide-title {
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #493e6b;
+}
+
+.review-guide-text {
+  margin-top: 7rpx;
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: #7a7192;
+}
+
+.application-card {
+  box-sizing: border-box;
+  padding: 30rpx;
+  margin-bottom: 24rpx;
+  background: rgb(255 255 255 / 97%);
+  border: 1rpx solid #e0eee4;
+  border-radius: 28rpx;
+  box-shadow: 0 14rpx 34rpx rgb(45 91 68 / 7%);
+}
+
+.application-card-header {
+  display: flex;
+  gap: 18rpx;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.application-person {
+  display: flex;
+  flex: 1;
+  gap: 16rpx;
+  align-items: center;
+  min-width: 0;
+}
+
+.application-avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 66rpx;
+  height: 66rpx;
+  overflow: hidden;
+  font-size: 21rpx;
+  color: #7250a8;
+  background: #f0eaff;
+  border-radius: 22rpx;
+}
+
+.application-person-copy {
+  min-width: 0;
+}
+
+.application-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 31rpx;
+  font-weight: 700;
+  color: #314d43;
+  white-space: nowrap;
+}
+
+.application-created {
+  margin-top: 6rpx;
+  font-size: 21rpx;
+  color: #94a69f;
+}
+
+.application-meta {
+  padding: 8rpx 22rpx;
+  margin-top: 26rpx;
+  background: #f7fbf8;
+  border-radius: 18rpx;
+}
+
+.meta-line {
+  display: flex;
+  gap: 16rpx;
+  padding: 12rpx 0;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.meta-label {
+  flex: 0 0 100rpx;
+  color: #8aa09a;
+}
+
+.meta-value {
+  flex: 1;
+  min-width: 0;
+  color: #4f6c62;
+}
+
+.application-note,
+.review-note {
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.application-note {
+  color: #5d776c;
+}
+
+.review-note {
+  color: #a36d22;
+}
+
+.note-label {
+  margin-right: 8rpx;
+  font-weight: 600;
+}
+
+.class-selector {
+  padding: 22rpx;
+  margin-top: 22rpx;
+  background: #eff8ff;
+  border: 1rpx solid #cce8fb;
+  border-radius: 20rpx;
+}
+
+.class-selector-title {
+  margin-bottom: 12rpx;
+  font-size: 23rpx;
+  font-weight: 600;
+  color: #4d7a98;
+}
+
+.class-selector .picker-input {
+  position: relative;
+  padding-right: 60rpx;
+  color: #327ca9;
+  background: #fff;
+  border-color: #9bd1f2;
+}
+
+.picker-arrow {
+  position: absolute;
+  right: 24rpx;
+  font-size: 28rpx;
+  color: #5aaee8;
+}
+
+.class-selector-hint {
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  line-height: 1.5;
+  color: #a36d22;
+}
+
+.class-auto-note {
+  padding: 18rpx 22rpx;
+  margin-top: 22rpx;
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: #4d7a98;
+  background: #eff8ff;
+  border: 1rpx solid #cce8fb;
+  border-radius: 20rpx;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  padding-top: 24rpx;
+  margin-top: 24rpx;
+  border-top: 1rpx solid #edf3ef;
+}
+
+.empty-state {
+  margin-top: 12rpx;
+}
+
+.empty-illustration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76rpx;
+  height: 76rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #44b978;
+  background: #e4f7e9;
+  border-radius: 24rpx;
+}
+
+/* 入班申请：审核信息保持白底分层，蓝色承接确认操作，米黄承接待处理提示。 */
+.applications-page {
+  background: #f9f5e8;
+}
+
+.applications-page .review-guide {
+  background: #fff9e7;
+  border-color: #f3dfaa;
+  border-radius: 28rpx;
+}
+
+.applications-page .review-guide-icon {
+  color: #165dff;
+  background: #dbe8ff;
+}
+
+.applications-page .review-guide-title {
+  color: #30343b;
+}
+
+.applications-page .review-guide-text {
+  color: #666;
+}
+
+.applications-page .application-card {
+  background: #fff;
+  border-color: #eee7d7;
+  border-radius: 32rpx;
+  box-shadow: 0 14rpx 34rpx rgb(86 78 45 / 8%);
+}
+
+.applications-page .application-name {
+  color: #30343b;
+}
+
+.applications-page .application-created,
+.applications-page .meta-label {
+  color: #666;
+}
+
+.applications-page .application-meta {
+  background: #fcf7e8;
+}
+
+.applications-page .meta-value,
+.applications-page .application-note {
+  color: #555b63;
+}
+
+.applications-page .review-note {
+  color: #8e651e;
+}
+
+.applications-page .class-selector,
+.applications-page .class-auto-note {
+  background: #edf7ff;
+  border-color: #cfe5f8;
+  border-radius: 20rpx;
+}
+
+.applications-page .class-selector-title,
+.applications-page .class-auto-note {
+  color: #246b9f;
+}
+
+.applications-page .class-selector .picker-input {
+  color: #165dff;
+  background: #fff;
+  border-color: #a9c2ff;
+}
+
+.applications-page .picker-arrow {
+  color: #165dff;
+}
+
+.applications-page .class-selector-hint {
+  color: #8e651e;
+}
+
+.applications-page .review-actions {
+  border-top-color: #eee7d7;
+}
+
+.applications-page .empty-illustration {
+  color: #165dff;
+  background: #dbe8ff;
+}

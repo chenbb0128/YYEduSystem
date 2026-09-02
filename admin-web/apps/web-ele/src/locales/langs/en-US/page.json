@@ -1,0 +1,62 @@
+{
+  "auth": {
+    "login": "Login",
+    "title": "Star Sprout Care Assistant",
+    "description": "A calm workspace for after-school care teams",
+    "loginTitle": "Welcome to Star Sprout",
+    "loginSubtitle": "Sign in to the after-school care workspace"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back",
+    "description": "Keep pickup, homework and family communication in one place.",
+    "framework": "Framework",
+    "uiLibrary": "UI Library",
+    "permission": "Access Mode",
+    "api": "Development API",
+    "frontendPermission": "Frontend Routes",
+    "localMock": "Local Mock",
+    "guideTitle": "Next steps",
+    "guideDescription": "Add pages under views, register routes under router, and connect your backend under api."
+  },
+  "users": {
+    "title": "User Management",
+    "description": "Manage administrator and teacher accounts and their login status.",
+    "search": "Search",
+    "reset": "Reset",
+    "keywordPlaceholder": "Search username or name",
+    "allStatus": "All statuses",
+    "create": "New User",
+    "edit": "Edit",
+    "delete": "Delete",
+    "username": "Username",
+    "realName": "Name",
+    "role": "Role",
+    "status": "Status",
+    "createdAt": "Created At",
+    "actions": "Actions",
+    "empty": "No users found",
+    "loadError": "Unable to load users. Please try again later.",
+    "cancel": "Cancel",
+    "confirm": "Delete",
+    "save": "Save",
+    "deleteTitle": "Delete User",
+    "confirmDelete": "Delete user {0}?",
+    "createSuccess": "User created",
+    "updateSuccess": "User updated",
+    "deleteSuccess": "User deleted",
+    "usernameRequired": "Username is required",
+    "usernameLength": "Username must be 3 to 32 characters",
+    "realNameRequired": "Name is required",
+    "roles": {
+      "admin": "Administrator",
+      "editor": "Editor",
+      "teacher": "Teacher",
+      "viewer": "Viewer"
+    },
+    "statuses": {
+      "active": "Active",
+      "disabled": "Disabled"
+    }
+  }
+}

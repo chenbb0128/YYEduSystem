@@ -1,0 +1,39 @@
+<view class="page homework-page">
+  <view class="page-header">
+    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">星芽托管助手 · 教师端</view><view class="page-title">作业管理</view><view class="page-subtitle">布置清晰的任务，也给每一份努力温柔的反馈</view></view></view>
+    <view class="page-helper">{{loading ? '作业同步中…' : '批改结果同步家长端'}}</view>
+  </view>
+
+  <view class="homework-toolbar">
+    <view class="toolbar-top"><view><view class="section-kicker">今日学习</view><view class="toolbar-title">作业安排</view></view><t-button size="small" theme="primary" loading="{{submitting}}" bind:tap="openCreate">布置作业</t-button></view>
+    <view class="toolbar-bottom"><view class="date-picker-wrap"><text class="field-label">查看日期</text><picker mode="date" value="{{date}}" bindchange="handleDateChange"><view class="picker-input">{{date}}<text class="picker-arrow">⌄</text></view></picker></view><view class="task-total"><view class="task-total-number">{{tasks.length}}</view><view class="task-total-label">条作业</view></view></view>
+  </view>
+
+  <view class="content-card task-list-card">
+    <view class="section-head"><view><view class="section-kicker">任务列表</view><view class="section-title">已布置作业</view></view><view class="section-note">点击查看完成情况</view></view>
+    <block wx:if="{{tasks.length}}"><view wx:for="{{tasks}}" wx:key="id" class="task-row {{selectedTaskID === item.id ? 'task-row-active' : ''}}" data-task-id="{{item.id}}" bind:tap="handleOpenTask"><view class="task-row-main"><view class="task-row-title">{{item.class_label}} · {{item.subject}}</view><view class="task-row-content">{{item.content}}</view><view class="task-row-meta">{{item.creator_name || '老师'}} · {{item.created_at}}</view></view><view class="task-row-action">{{selectedTaskID === item.id ? '已选' : '查看'}}<text>›</text></view></view></block>
+    <t-empty wx:else description="当天还没有作业" />
+  </view>
+
+  <view wx:if="{{selectedTask}}" class="content-card review-card">
+    <view class="section-head"><view class="review-heading"><view class="section-kicker">逐人反馈</view><view class="section-title">学生完成情况</view><view class="review-subtitle">{{selectedTask.class_label}} · {{selectedTask.subject}}</view></view><view class="task-total review-total"><view class="task-total-number">{{taskStudents.length}}</view><view class="task-total-label">名学生</view></view></view>
+    <view wx:if="{{selectedTask.attachment_urls_signed.length}}" class="photo-strip review-photo-strip"><image wx:for="{{selectedTask.attachment_urls_signed}}" wx:key="*this" class="homework-photo" mode="aspectFill" src="{{item}}" /></view>
+    <block wx:if="{{taskStudents.length}}"><view wx:for="{{taskStudents}}" wx:key="student_id" class="student-review-card"><view class="student-review-header"><view class="student-review-person"><view class="student-avatar">{{item.student_name}}</view><view class="student-name">{{item.student_name}}</view></view><text class="status-badge {{item.status_class}}">{{item.status_label}}</text></view><input class="note-input" placeholder="批改意见（可选）" data-student-id="{{item.student_id}}" value="{{item.correction_note}}" bindinput="handleReviewNote" /><view class="review-buttons"><t-button size="small" theme="success" loading="{{submitting}}" data-student-id="{{item.student_id}}" data-status="completed" bind:tap="reviewStudent">完成</t-button><t-button size="small" theme="warning" variant="outline" loading="{{submitting}}" data-student-id="{{item.student_id}}" data-status="incomplete" bind:tap="reviewStudent">订正</t-button><t-button size="small" theme="danger" variant="outline" loading="{{submitting}}" data-student-id="{{item.student_id}}" data-status="not_submitted" bind:tap="reviewStudent">未交</t-button></view></view></block>
+    <t-empty wx:else description="没有学生名单" />
+  </view>
+
+  <t-popup visible="{{showCreate}}" placement="bottom" bind:visible-change="closeCreate">
+    <view class="homework-sheet">
+      <view class="sheet-handle"></view>
+      <view class="sheet-header"><view><view class="section-kicker">新建任务</view><view class="section-title">布置作业</view></view><view class="text-link" bind:tap="closeCreate">取消</view></view>
+      <view class="sheet-field"><text class="field-label">作业日期</text><view class="picker-input">{{date}}</view></view>
+      <view class="sheet-field"><text class="field-label">学校班级</text><picker mode="selector" range="{{classOptions}}" value="{{classIndex}}" bindchange="handleClassChange"><view class="picker-input">{{classOptions[classIndex] || '请选择负责班级'}}<text class="picker-arrow">⌄</text></view></picker></view>
+      <view class="sheet-field"><text class="field-label">科目</text><input class="field-input field-input-box" maxlength="32" placeholder="{{focusedField === 'subject' ? '' : '例如：语文'}}" data-field="subject" value="{{subject}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+      <view class="sheet-field"><text class="field-label">作业内容</text><textarea class="field-textarea" maxlength="1000" placeholder="{{focusedField === 'content' ? '' : '填写今天要完成的作业'}}" data-field="content" value="{{content}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+      <view class="sheet-field"><view class="field-action-head"><text class="field-label">作业图片（可选，最多 9 张）</text><t-button size="small" variant="outline" loading="{{submitting}}" bind:tap="chooseAttachments">上传图片</t-button></view><view wx:if="{{attachmentNames.length}}" class="attachment-list"><view wx:for="{{attachmentNames}}" wx:key="index" class="attachment-item"><text>{{index + 1}}.</text>{{item}}</view></view></view>
+      <view class="sheet-field"><view class="field-action-head"><text class="field-label">布置学生（默认全选）</text><view class="select-actions"><view bind:tap="handleSelectAllStudents">全选</view><view bind:tap="handleClearStudents">清空</view></view></view><view class="student-check-list"><view wx:for="{{candidateStudents}}" wx:key="id" class="student-check" data-student-id="{{item.id}}" bind:tap="handleToggleStudent"><checkbox value="{{item.id}}" checked="{{item.selected}}" disabled="true" /><text>{{item.name}}</text></view><t-empty wx:if="{{!candidateStudents.length}}" description="该班级暂无在托学生" /></view></view>
+      <view class="sheet-submit"><t-button block theme="primary" loading="{{submitting}}" bind:tap="submitCreate">确认布置（{{selectedStudentIDs.length}}人）</t-button></view>
+    </view>
+  </t-popup>
+  <t-toast id="t-toast" />
+</view>

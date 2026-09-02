@@ -1,0 +1,82 @@
+<view class="page summary-page">
+  <view class="page-header">
+    <view class="page-header__identity">
+      <view class="brand-emblem">芽</view>
+      <view>
+        <view class="page-eyebrow">星芽托管助手 · 教师端</view>
+        <view class="page-title">教师每日总结</view>
+        <view class="page-subtitle">把接送、作业和餐食记录收束成当天的温柔回顾</view>
+      </view>
+    </view>
+    <view class="page-helper">{{loading ? '数据整理中…' : '发布后家长可查看'}}</view>
+  </view>
+  <view class="summary-toolbar">
+    <view>
+      <text class="field-label">总结日期</text>
+      <picker mode="date" value="{{date}}" bindchange="handleDateChange">
+        <view class="picker-input">{{date}}<text class="picker-arrow">⌄</text></view>
+      </picker>
+    </view>
+    <view class="status-pill">{{statusLabel(summary && summary.status)}}</view>
+  </view>
+  <view class="content-card summary-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">今日回顾</view>
+        <view class="section-title">托管工作总结</view>
+      </view>
+      <t-button wx:if="{{!summary || summary.status === 'draft'}}" size="small" variant="outline" loading="{{submitting}}" bind:tap="generate">{{summary ? '重新生成' : '生成草稿'}}</t-button>
+    </view>
+    <view wx:if="{{summary && (summary.status === 'closed' || summary.status === 'withdrawn')}}" class="warning-note">{{summary.status === 'withdrawn' ? '总结已撤回，当前内容仅供内部查看。' : '当天托管已结束，历史内容仅供查看。'}}</view>
+    <textarea class="summary-textarea" disabled="{{summary && summary.status !== 'draft'}}" maxlength="4000" placeholder="先生成一份草稿，再根据现场情况补充说明" value="{{content}}" bindinput="handleInput" />
+    <view wx:if="{{childUpdateItems.length}}" class="summary-child-updates">
+      <view class="summary-child-updates-title">孩子动态（只对对应家长展示）</view>
+      <view wx:for="{{childUpdateItems}}" wx:key="student_id" class="summary-child-update-row">
+        <view class="summary-child-update-name">{{item.student_name}}</view>
+        <input class="summary-child-update-input" disabled="{{summary && summary.status !== 'draft'}}" maxlength="500" placeholder="例如：作业已完成，今日状态良好" value="{{item.note}}" data-student-id="{{item.student_id}}" bindinput="handleChildUpdate" />
+      </view>
+    </view>
+    <view wx:if="{{summary && (summary.status === 'published' || summary.status === 'closed' || summary.status === 'withdrawn')}}" class="summary-correction-panel">
+      <view class="summary-child-updates-title">发布后更正</view>
+      <view class="muted-text">更正会生成新版本并重新通知家长，必须填写原因。</view>
+      <t-button size="small" variant="outline" bind:tap="openCorrection">发起更正</t-button>
+      <t-button wx:if="{{summary.status === 'published'}}" size="small" variant="outline" theme="warning" bind:tap="withdraw">撤回发布</t-button>
+    </view>
+    <view wx:if="{{correctionVisible}}" class="summary-correction-editor">
+      <textarea class="summary-textarea" maxlength="4000" value="{{correctionContent}}" data-field="correctionContent" bindinput="handleCorrectionInput" />
+      <view wx:if="{{childUpdateItems.length}}" class="summary-child-updates">
+        <view class="summary-child-updates-title">孩子专属动态</view>
+        <view wx:for="{{childUpdateItems}}" wx:key="student_id" class="summary-child-update-row">
+          <view class="summary-child-update-name">{{item.student_name}}</view>
+          <input class="summary-child-update-input" maxlength="500" placeholder="例如：作业已完成，今日状态良好" value="{{correctionChildUpdates[item.student_id]}}" data-student-id="{{item.student_id}}" bindinput="handleCorrectionChildUpdate" />
+        </view>
+      </view>
+      <input class="summary-child-update-input" maxlength="500" placeholder="更正/撤回原因" value="{{correctionReason}}" data-field="correctionReason" bindinput="handleCorrectionInput" />
+      <view class="summary-actions">
+        <t-button size="small" variant="outline" bind:tap="correct">确认更正并发布</t-button>
+        <t-button wx:if="{{summary && summary.status === 'published'}}" size="small" theme="warning" bind:tap="submitWithdraw">确认撤回</t-button>
+      </view>
+    </view>
+    <view class="summary-actions">
+      <t-button wx:if="{{summary && summary.status === 'draft'}}" size="small" variant="outline" loading="{{submitting}}" bind:tap="save">保存</t-button>
+      <t-button wx:if="{{summary && summary.status === 'draft'}}" size="small" theme="primary" loading="{{submitting}}" bind:tap="publish">发布给家长</t-button>
+      <t-button wx:if="{{summary && summary.status === 'published'}}" size="small" theme="warning" variant="outline" loading="{{submitting}}" bind:tap="close">结束当天</t-button>
+    </view>
+  </view>
+  <view wx:if="{{summary && versions.length}}" class="content-card summary-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">可追溯记录</view>
+        <view class="section-title">版本记录</view>
+      </view>
+      <view class="section-note">当前 v{{summary.version}}</view>
+    </view>
+    <view wx:for="{{versions}}" wx:key="id" class="summary-version-row">
+      <text>v{{item.version}} · {{versionActionLabel(item.action)}}</text>
+      <text class="record-meta">{{item.created_by_name}} · {{item.created_at}}</text>
+      <text wx:if="{{item.reason}}" class="record-note">原因：{{item.reason}}</text>
+    </view>
+  </view>
+  <view wx:if="{{!summary}}" class="empty-state soft-card"><t-empty description="还没有生成当天总结" /></view>
+  <t-toast id="t-toast" />
+</view>

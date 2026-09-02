@@ -1,0 +1,722 @@
+.home-page {
+  padding-top: 44rpx;
+}
+
+.home-header {
+  align-items: flex-start;
+  margin-bottom: 40rpx;
+}
+
+.home-brand-copy {
+  min-width: 0;
+}
+
+.login-welcome-card {
+  position: relative;
+  justify-content: center;
+  min-height: 250rpx;
+  padding: 34rpx 30rpx;
+  margin-bottom: 36rpx;
+  text-align: center;
+  background: linear-gradient(145deg, #fffdf4 0%, #fff8d9 100%);
+  border-color: #f7e8a7;
+}
+
+.login-welcome-card .welcome-sun {
+  position: absolute;
+  top: 22rpx;
+  right: 28rpx;
+  width: 52rpx;
+  height: 52rpx;
+  font-size: 28rpx;
+  color: #d08a24;
+  background: #fff0b8;
+}
+
+.welcome-copy-centered {
+  flex: 0 1 auto;
+}
+
+.welcome-overline {
+  margin-bottom: 12rpx;
+  font-size: 31rpx;
+  font-weight: 700;
+  color: #df762f;
+}
+
+.login-welcome-card .welcome-title {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: #26382f;
+  letter-spacing: 1rpx;
+}
+
+.login-welcome-card .welcome-text {
+  margin-top: 16rpx;
+  font-size: 27rpx;
+  color: #52645b;
+}
+
+.service-chip {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10rpx;
+  align-items: center;
+  padding: 12rpx 16rpx;
+  font-size: 21rpx;
+  color: #899b95;
+  background: rgb(255 255 255 / 75%);
+  border: 1rpx solid #e3eee7;
+  border-radius: 999rpx;
+}
+
+.service-chip-ready {
+  color: #268c58;
+}
+
+.service-dot {
+  width: 12rpx;
+  height: 12rpx;
+  background: #efb94c;
+  border-radius: 50%;
+}
+
+.service-chip-ready .service-dot {
+  background: #44b978;
+}
+
+.welcome-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  gap: 22rpx;
+  align-items: center;
+  min-height: 172rpx;
+  padding: 30rpx;
+  margin-bottom: 36rpx;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e9f8ed 0%, #f5fbf5 65%, #e5f5ff 100%);
+  border: 1rpx solid #d6eddd;
+  border-radius: 30rpx;
+}
+
+.welcome-card::after {
+  position: absolute;
+  right: -54rpx;
+  bottom: -74rpx;
+  width: 190rpx;
+  height: 190rpx;
+  content: '';
+  background: rgb(255 255 255 / 45%);
+  border-radius: 50%;
+}
+
+.welcome-sun {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76rpx;
+  height: 76rpx;
+  font-size: 38rpx;
+  color: #c3841b;
+  background: #fff0bd;
+  border-radius: 50%;
+}
+
+.welcome-copy {
+  z-index: 1;
+  flex: 1;
+}
+
+.welcome-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #2c5844;
+}
+
+.welcome-text,
+.form-intro {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #6f8980;
+}
+
+.entry-label {
+  margin: 0 4rpx 18rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #5b766d;
+}
+
+.login-card {
+  box-sizing: border-box;
+  display: flex;
+  gap: 20rpx;
+  align-items: center;
+  min-height: 190rpx;
+  padding: 28rpx 24rpx 28rpx 30rpx;
+  margin-bottom: 18rpx;
+  border: 1rpx solid transparent;
+  border-radius: 28rpx;
+  box-shadow: 0 14rpx 30rpx rgb(45 91 68 / 8%);
+}
+
+.login-card-parent {
+  background: linear-gradient(115deg, #fff7c8 0%, #fffbe8 100%);
+  border-color: #f5e5a0;
+}
+
+.login-card-teacher {
+  background: linear-gradient(115deg, #cfeaff 0%, #eaf6ff 100%);
+  border-color: #b5daf3;
+}
+
+.login-icon,
+.role-hero-icon,
+.action-icon,
+.parent-entry-mark,
+.stat-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border-radius: 20rpx;
+}
+
+.login-icon {
+  order: 2;
+  width: 118rpx;
+  height: 118rpx;
+  margin-left: auto;
+  font-size: 40rpx;
+  border-radius: 50%;
+  box-shadow: 0 6rpx 18rpx rgb(48 79 67 / 9%);
+}
+
+.login-icon-parent {
+  color: #208354;
+  background: #e1f5e6;
+}
+
+.login-icon-teacher {
+  color: #327ca9;
+  background: #e5f4ff;
+}
+
+.login-card-copy {
+  order: 1;
+}
+
+.action-copy,
+.parent-entry-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.login-card-title,
+.action-title {
+  font-size: 37rpx;
+  font-weight: 700;
+  color: #29463e;
+}
+
+.login-card-text,
+.action-text {
+  margin-top: 7rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 25rpx;
+  line-height: 1.5;
+  color: #80958f;
+  white-space: nowrap;
+}
+
+.login-chevron,
+.action-arrow {
+  flex: 0 0 auto;
+  order: 3;
+  font-size: 42rpx;
+  font-weight: 300;
+  color: #b0c6bb;
+}
+
+.login-form-card {
+  padding: 34rpx 30rpx;
+}
+
+.text-link {
+  flex: 0 0 auto;
+  font-size: 24rpx;
+  color: #378fca;
+}
+
+.form-intro {
+  margin-bottom: 28rpx;
+}
+
+.form-field {
+  margin-top: 22rpx;
+}
+
+.login-submit {
+  margin-top: 32rpx;
+}
+
+.form-footnote {
+  margin-top: 20rpx;
+  font-size: 21rpx;
+  line-height: 1.5;
+  color: #9aaea5;
+  text-align: center;
+}
+
+.role-hero {
+  position: relative;
+  box-sizing: border-box;
+  padding: 32rpx;
+  margin-bottom: 38rpx;
+  overflow: hidden;
+  color: #fff;
+  border-radius: 30rpx;
+  box-shadow: 0 18rpx 34rpx rgb(46 114 85 / 13%);
+}
+
+.role-hero::after {
+  position: absolute;
+  right: -56rpx;
+  bottom: -90rpx;
+  width: 230rpx;
+  height: 230rpx;
+  content: '';
+  background: rgb(255 255 255 / 13%);
+  border-radius: 50%;
+}
+
+.role-hero-teacher {
+  background: linear-gradient(135deg, #269b60, #63c98a);
+}
+
+.role-hero-parent {
+  background: linear-gradient(135deg, #378fca, #75c6ef);
+}
+
+.role-hero-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.role-hero-icon {
+  width: 64rpx;
+  height: 64rpx;
+  font-size: 26rpx;
+  color: #27714c;
+  background: rgb(255 255 255 / 90%);
+}
+
+.role-hero-action {
+  position: relative;
+  z-index: 1;
+  padding: 10rpx 0 10rpx 20rpx;
+  font-size: 23rpx;
+  color: rgb(255 255 255 / 90%);
+}
+
+.role-hero-title,
+.role-hero-text,
+.role-hero-tip {
+  position: relative;
+  z-index: 1;
+}
+
+.role-hero-title {
+  margin-top: 24rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.role-hero-text {
+  max-width: 570rpx;
+  margin-top: 12rpx;
+  font-size: 25rpx;
+  line-height: 1.6;
+  color: rgb(255 255 255 / 90%);
+}
+
+.role-hero-tip {
+  display: inline-block;
+  padding: 9rpx 16rpx;
+  margin-top: 24rpx;
+  font-size: 21rpx;
+  color: rgb(255 255 255 / 95%);
+  background: rgb(21 105 67 / 20%);
+  border-radius: 999rpx;
+}
+
+.role-hero-parent .role-hero-icon {
+  color: #327ca9;
+}
+
+.role-hero-parent .role-hero-tip {
+  background: rgb(40 100 137 / 20%);
+}
+
+.dashboard-heading {
+  margin-bottom: 18rpx;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+  margin-bottom: 34rpx;
+}
+
+.stat-card {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 178rpx;
+  padding: 24rpx;
+  overflow: hidden;
+  background: #fff;
+  border: 1rpx solid #e2eee6;
+  border-radius: 25rpx;
+  box-shadow: 0 10rpx 24rpx rgb(45 91 68 / 5%);
+}
+
+.stat-card::after {
+  position: absolute;
+  right: -24rpx;
+  bottom: -34rpx;
+  width: 100rpx;
+  height: 100rpx;
+  content: '';
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+.stat-card-green::after {
+  background: #dcf4e3;
+}
+
+.stat-card-blue::after {
+  background: #e0f2ff;
+}
+
+.stat-card-yellow::after {
+  background: #fff0c9;
+}
+
+.stat-card-purple::after {
+  background: #eee8ff;
+}
+
+.stat-icon {
+  position: relative;
+  z-index: 1;
+  width: 48rpx;
+  height: 48rpx;
+  font-size: 21rpx;
+}
+
+.stat-card-green .stat-icon {
+  color: #208354;
+  background: #e1f5e6;
+}
+
+.stat-card-blue .stat-icon {
+  color: #327ca9;
+  background: #e5f4ff;
+}
+
+.stat-card-yellow .stat-icon {
+  color: #a96c12;
+  background: #fff3cf;
+}
+
+.stat-card-purple .stat-icon {
+  color: #7250a8;
+  background: #f0eaff;
+}
+
+.stat-number {
+  position: relative;
+  z-index: 1;
+  margin-top: 18rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #29463e;
+}
+
+.stat-label {
+  position: relative;
+  z-index: 1;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #80958f;
+}
+
+.work-entry-card {
+  margin-bottom: 30rpx;
+}
+
+.work-entry-list {
+  margin-top: 22rpx;
+}
+
+.action-card {
+  box-sizing: border-box;
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  min-height: 104rpx;
+  padding: 18rpx;
+  margin-top: 14rpx;
+  border: 1rpx solid transparent;
+  border-radius: 22rpx;
+}
+
+.action-card-pickup {
+  background: #fff8e8;
+  border-color: #ffedbb;
+}
+
+.action-card-homework {
+  background: #eef9f2;
+  border-color: #d9f2e1;
+}
+
+.action-card-application {
+  background: #f3efff;
+  border-color: #e4dafa;
+}
+
+.action-icon {
+  width: 60rpx;
+  height: 60rpx;
+  font-size: 25rpx;
+}
+
+.action-card-pickup .action-icon {
+  color: #a96c12;
+  background: #ffedbb;
+}
+
+.action-card-homework .action-icon {
+  color: #208354;
+  background: #d9f2e1;
+}
+
+.action-card-application .action-icon {
+  color: #7250a8;
+  background: #e4dafa;
+}
+
+.parent-entry-card {
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  margin-bottom: 30rpx;
+}
+
+.parent-entry-mark {
+  width: 62rpx;
+  height: 62rpx;
+  font-size: 24rpx;
+  color: #327ca9;
+  background: #e5f4ff;
+}
+
+.privacy-note {
+  display: flex;
+  gap: 10rpx;
+  align-items: center;
+  justify-content: center;
+  padding: 8rpx 0;
+  font-size: 21rpx;
+  color: #95a7a0;
+}
+
+.privacy-lock {
+  font-size: 13rpx;
+  color: #44b978;
+}
+
+/* 首页 / 登录页：以蓝色行动按钮承接登录，以米黄和天空蓝区分家长、教师入口。 */
+.home-page {
+  background: #f9f5e8;
+}
+
+.home-page .login-welcome-card {
+  min-height: 250rpx;
+  background: #fff9e7;
+  border-color: #f3dfaa;
+  border-radius: 32rpx;
+  box-shadow: 0 14rpx 30rpx rgb(130 105 43 / 8%);
+}
+
+.home-page .welcome-overline {
+  color: #d18424;
+}
+
+.home-page .login-welcome-card .welcome-title {
+  color: #30343b;
+}
+
+.home-page .login-welcome-card .welcome-text {
+  color: #666;
+}
+
+.home-page .welcome-card {
+  background: linear-gradient(135deg, #edf4ff 0%, #f6f9ff 68%, #fff9e7 100%);
+  border-color: #dce7ff;
+  border-radius: 32rpx;
+}
+
+.home-page .login-card {
+  border-radius: 32rpx;
+  box-shadow: 0 14rpx 30rpx rgb(75 73 49 / 8%);
+}
+
+.home-page .login-card-parent {
+  background: #fff9e7;
+  border-color: #f3dfaa;
+}
+
+.home-page .login-card-teacher {
+  background: #edf4ff;
+  border-color: #d5e2ff;
+}
+
+.home-page .login-icon-parent {
+  color: #9a6510;
+  background: #ffedb8;
+}
+
+.home-page .login-icon-teacher {
+  color: #165dff;
+  background: #dbe8ff;
+}
+
+.home-page .login-card-title,
+.home-page .action-title {
+  color: #30343b;
+}
+
+.home-page .login-card-text,
+.home-page .action-text {
+  color: #666;
+}
+
+.home-page .login-chevron,
+.home-page .action-arrow {
+  color: #9da7b8;
+}
+
+.home-page .login-form-card {
+  border-radius: 32rpx;
+}
+
+.home-page .text-link {
+  color: #165dff;
+}
+
+.home-page .role-hero {
+  border-radius: 32rpx;
+  box-shadow: 0 16rpx 34rpx rgb(22 93 255 / 15%);
+}
+
+.home-page .role-hero-teacher {
+  background: linear-gradient(135deg, #165dff, #62b4ee);
+}
+
+.home-page .role-hero-parent {
+  background: linear-gradient(135deg, #358fd2, #7ac8f1);
+}
+
+.home-page .role-hero-tip {
+  background: rgb(9 54 143 / 20%);
+}
+
+.home-page .role-hero-parent .role-hero-tip {
+  background: rgb(40 100 137 / 20%);
+}
+
+.home-page .stat-card {
+  border-color: #eee7d7;
+  border-radius: 28rpx;
+  box-shadow: 0 10rpx 24rpx rgb(86 78 45 / 6%);
+}
+
+.home-page .stat-card-green::after {
+  background: #dbe8ff;
+}
+
+.home-page .stat-card-green .stat-icon {
+  color: #165dff;
+  background: #eef4ff;
+}
+
+.home-page .stat-card-blue .stat-icon {
+  color: #246b9f;
+  background: #eaf5ff;
+}
+
+.home-page .stat-number {
+  color: #30343b;
+}
+
+.home-page .stat-label {
+  color: #666;
+}
+
+.home-page .action-card {
+  border-radius: 22rpx;
+}
+
+.home-page .action-card-pickup {
+  background: #fff9e7;
+  border-color: #f3dfaa;
+}
+
+.home-page .action-card-homework {
+  background: #edf4ff;
+  border-color: #dbe8ff;
+}
+
+.home-page .action-card-application {
+  background: #f3f0ff;
+  border-color: #e2daf9;
+}
+
+.home-page .action-card-homework .action-icon {
+  color: #165dff;
+  background: #dbe8ff;
+}
+
+.home-page .parent-entry-card {
+  border-radius: 32rpx;
+}
+
+.home-page .parent-entry-mark {
+  color: #165dff;
+  background: #eef4ff;
+}
+
+.home-page .privacy-lock {
+  color: #165dff;
+}
+
+.home-page .service-chip-ready {
+  color: #165dff;
+}
+
+.home-page .service-chip-ready .service-dot {
+  background: #165dff;
+}

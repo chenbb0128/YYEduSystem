@@ -1,0 +1,24 @@
+<view class="page applications-page">
+  <view class="page-header">
+    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">星芽托管助手 · 教师端</view><view class="page-title">家长入班审核</view><view class="page-subtitle">确认信息，帮助每个孩子顺利加入托管班</view></view></view>
+    <view class="page-helper">{{loading ? '审核队列同步中…' : '逐条确认更安心'}}</view>
+  </view>
+
+  <view class="review-guide">
+    <view class="review-guide-icon">审</view>
+    <view class="review-guide-copy"><view class="review-guide-title">审核小提示</view><view class="review-guide-text">先确认孩子与家长信息，再选择负责班级。通过后会自动建档并绑定。</view></view>
+  </view>
+
+  <view wx:if="{{applications.length}}" class="application-list">
+      <view wx:for="{{applications}}" wx:key="id" class="application-card">
+      <view class="application-card-header"><view class="application-person"><view class="application-avatar">{{item.student_name}}</view><view class="application-person-copy"><view class="application-name">{{item.student_name}}</view><view class="application-created">申请资料已提交</view></view></view><view class="status-pill {{item.status === 'needs_info' ? 'status-tone-warning' : item.status === 'rejected' ? 'status-tone-danger' : item.status === 'approved' ? 'status-tone-success' : ''}}">{{item.status_label}}</view></view>
+      <view class="application-meta"><view class="meta-line"><text class="meta-label">家长</text><text class="meta-value">{{item.guardian_name || '未填写'}} · {{item.guardian_phone}}</text></view><view class="meta-line"><text class="meta-label">填写信息</text><text class="meta-value">{{item.school_name_input || '老师邀请班级'}} {{item.grade_input}}{{item.class_name_input}}</text></view><view class="meta-line"><text class="meta-label">系统识别</text><text class="meta-value">{{item.grade || '待确认'}} {{item.class_name || '待确认'}}</text></view></view>
+      <view wx:if="{{item.notes}}" class="application-note"><text class="note-label">家长备注</text>{{item.notes}}</view>
+      <view wx:if="{{item.review_note}}" class="review-note"><text class="note-label">审核备注</text>{{item.review_note}}</view>
+      <view wx:if="{{(item.status === 'pending' || item.status === 'needs_info') && !item.school_class_id}}" class="class-auto-note">系统暂未匹配到班级：有负责班级时可直接选择；没有同名班级但学校已识别时，可由你确认后自动建立班级。</view>
+      <view wx:if="{{item.status === 'pending' || item.status === 'needs_info'}}" class="review-actions"><t-button size="small" theme="success" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleApprove">通过审核</t-button><t-button size="small" variant="outline" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleNeedsInfo">补充资料</t-button><t-button size="small" variant="outline" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleReject">不通过</t-button></view>
+    </view>
+  </view>
+  <view wx:else class="empty-state soft-card"><view class="empty-illustration">✓</view><t-empty description="暂时没有待审核的家长申请" /></view>
+  <t-toast id="t-toast" />
+</view>

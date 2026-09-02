@@ -1,0 +1,16 @@
+{
+  "$schema": "https://vite.icebreaker.top/app.json",
+  "pages": [
+    "pages/index/index",
+    "pages/pickup/index",
+    "pages/child-applications/index",
+    "pages/parent/index",
+    "pages/homework/index",
+    "pages/meals/index",
+    "pages/summary/index"
+  ],
+  "window": {},
+  "componentFramework": "glass-easel",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

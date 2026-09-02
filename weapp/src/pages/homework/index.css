@@ -1,0 +1,439 @@
+.homework-page {
+  padding-bottom: 100rpx;
+}
+
+.homework-toolbar {
+  box-sizing: border-box;
+  padding: 30rpx;
+  margin-bottom: 24rpx;
+  background: linear-gradient(135deg, #eef9f2, #eff8ff);
+  border: 1rpx solid #d7ebdf;
+  border-radius: 28rpx;
+}
+
+.toolbar-top,
+.toolbar-bottom,
+.field-action-head {
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolbar-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #29463e;
+}
+
+.toolbar-bottom {
+  align-items: flex-end;
+  margin-top: 26rpx;
+}
+
+.date-picker-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.date-picker-wrap .field-label {
+  margin-bottom: 10rpx;
+}
+
+.picker-input {
+  position: relative;
+  padding-right: 62rpx;
+}
+
+.picker-arrow {
+  position: absolute;
+  right: 24rpx;
+  font-size: 30rpx;
+  color: #5aaee8;
+}
+
+.task-total {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7rpx;
+  align-items: baseline;
+  padding-bottom: 16rpx;
+  color: #78918a;
+}
+
+.task-total-number {
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #327ca9;
+}
+
+.task-total-label {
+  font-size: 21rpx;
+  white-space: nowrap;
+}
+
+.task-list-card,
+.review-card {
+  margin-bottom: 24rpx;
+}
+
+.task-row {
+  box-sizing: border-box;
+  display: flex;
+  gap: 18rpx;
+  align-items: flex-start;
+  padding: 26rpx 0;
+  border-bottom: 1rpx solid #edf3ef;
+}
+
+.task-row:last-child {
+  border-bottom: 0;
+}
+
+.task-row-active {
+  padding-right: 18rpx;
+  padding-left: 18rpx;
+  margin-right: -18rpx;
+  margin-left: -18rpx;
+  background: #eef9f2;
+  border-radius: 18rpx;
+}
+
+.task-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #315148;
+  white-space: nowrap;
+}
+
+.task-row-content {
+  display: -webkit-box;
+  margin-top: 10rpx;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #607a70;
+  -webkit-box-orient: vertical;
+}
+
+.task-row-meta,
+.review-subtitle {
+  margin-top: 9rpx;
+  font-size: 21rpx;
+  color: #94a69f;
+}
+
+.task-row-action {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4rpx;
+  align-items: center;
+  padding-top: 6rpx;
+  font-size: 22rpx;
+  color: #378fca;
+}
+
+.task-row-action text {
+  font-size: 32rpx;
+  color: #8ec9e9;
+}
+
+.review-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-total {
+  flex-direction: column;
+  gap: 5rpx;
+  align-items: flex-end;
+  padding-bottom: 0;
+}
+
+.review-photo-strip {
+  margin-top: 24rpx;
+}
+
+.photo-strip {
+  display: flex;
+  gap: 12rpx;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.homework-photo {
+  flex: 0 0 auto;
+  width: 138rpx;
+  height: 138rpx;
+  background: #edf5ef;
+  border-radius: 20rpx;
+}
+
+.student-review-card {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #edf3ef;
+}
+
+.student-review-card:last-child {
+  border-bottom: 0;
+}
+
+.student-review-header {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.student-review-person {
+  display: flex;
+  flex: 1;
+  gap: 14rpx;
+  align-items: center;
+  min-width: 0;
+}
+
+.student-avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  overflow: hidden;
+  font-size: 19rpx;
+  color: #208354;
+  background: #e4f7e9;
+  border-radius: 18rpx;
+}
+
+.student-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #315148;
+  white-space: nowrap;
+}
+
+.note-input,
+.field-input-box {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0 22rpx;
+  font-size: 25rpx;
+  color: #29463e;
+  background: #f7fbf8;
+  border: 1rpx solid #dcebe1;
+  border-radius: 18rpx;
+}
+
+.note-input {
+  height: 78rpx;
+  margin-top: 18rpx;
+  line-height: 78rpx;
+}
+
+.field-input-box {
+  height: 92rpx;
+  line-height: 42rpx;
+}
+
+.review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.homework-sheet {
+  box-sizing: border-box;
+  max-height: 88vh;
+  padding: 18rpx 32rpx 40rpx;
+  overflow: auto;
+  background: #fff;
+  border-radius: 32rpx 32rpx 0 0;
+}
+
+.sheet-handle {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 0 auto 24rpx;
+  background: #dcebe1;
+  border-radius: 999rpx;
+}
+
+.sheet-header {
+  display: flex;
+  gap: 18rpx;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+
+.sheet-field {
+  margin-top: 22rpx;
+}
+
+.sheet-field .field-label {
+  margin-bottom: 10rpx;
+}
+
+.field-action-head .field-label {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.select-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 20rpx;
+  font-size: 23rpx;
+  color: #378fca;
+}
+
+.attachment-list {
+  padding: 16rpx 20rpx;
+  margin-top: 14rpx;
+  background: #f7fbf8;
+  border-radius: 16rpx;
+}
+
+.attachment-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  line-height: 1.7;
+  color: #6f8980;
+  white-space: nowrap;
+}
+
+.attachment-item text {
+  margin-right: 8rpx;
+  color: #44b978;
+}
+
+.student-check-list {
+  max-height: 360rpx;
+  margin-top: 12rpx;
+  overflow: auto;
+}
+
+.student-check {
+  display: flex;
+  gap: 12rpx;
+  align-items: center;
+  padding: 16rpx 0;
+  font-size: 26rpx;
+  color: #4f6c62;
+  border-bottom: 1rpx solid #edf3ef;
+}
+
+.student-check:last-child {
+  border-bottom: 0;
+}
+
+.sheet-submit {
+  margin-top: 30rpx;
+}
+
+/* 作业页：布置作业是主任务，批改结果和逐人操作保持同一套表单、卡片语言。 */
+.homework-page {
+  background: #f9f5e8;
+}
+
+.homework-page .homework-toolbar {
+  background: linear-gradient(135deg, #edf4ff, #fff9e7);
+  border-color: #dbe8ff;
+  border-radius: 32rpx;
+}
+
+.homework-page .toolbar-title,
+.homework-page .task-row-title,
+.homework-page .student-name {
+  color: #30343b;
+}
+
+.homework-page .task-total-number,
+.homework-page .task-row-action,
+.homework-page .select-actions {
+  color: #165dff;
+}
+
+.homework-page .task-total-label,
+.homework-page .task-row-meta,
+.homework-page .review-subtitle {
+  color: #666;
+}
+
+.homework-page .task-list-card,
+.homework-page .review-card {
+  border-radius: 32rpx;
+}
+
+.homework-page .task-row {
+  border-bottom-color: #eee7d7;
+}
+
+.homework-page .task-row-active {
+  background: #eef4ff;
+}
+
+.homework-page .task-row-content {
+  color: #555b63;
+}
+
+.homework-page .student-avatar {
+  color: #165dff;
+  background: #dbe8ff;
+}
+
+.homework-page .student-review-card {
+  border-bottom-color: #eee7d7;
+}
+
+.homework-page .note-input,
+.homework-page .field-input-box,
+.homework-page .attachment-list {
+  color: #30343b;
+  background: #fcf7e8;
+  border-color: #ede3c9;
+}
+
+.homework-page .attachment-item {
+  color: #666;
+}
+
+.homework-page .attachment-item text {
+  color: #165dff;
+}
+
+.homework-page .homework-photo {
+  background: #edf7ff;
+  border-radius: 20rpx;
+}
+
+.homework-page .homework-sheet {
+  border-radius: 32rpx 32rpx 0 0;
+}
+
+.homework-page .sheet-handle {
+  background: #dbe8ff;
+}
+
+.homework-page .student-check {
+  color: #555b63;
+  border-bottom-color: #eee7d7;
+}

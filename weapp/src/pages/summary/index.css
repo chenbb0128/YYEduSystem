@@ -1,0 +1,150 @@
+.summary-page {
+  min-height: 100vh;
+  padding-bottom: 48rpx;
+}
+
+.summary-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 24rpx;
+  margin: 24rpx 0;
+  background: #fff;
+  border-radius: 24rpx;
+}
+
+.summary-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 360rpx;
+  padding: 20rpx;
+  margin-top: 24rpx;
+  font-size: 28rpx;
+  line-height: 1.7;
+  color: #315148;
+  background: #f7fbf8;
+  border: 1rpx solid #e0eee4;
+  border-radius: 18rpx;
+}
+
+.summary-child-updates {
+  padding-top: 24rpx;
+  margin-top: 24rpx;
+  border-top: 1rpx solid #edf3ee;
+}
+
+.summary-child-updates-title {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #527365;
+}
+
+.summary-child-update-row {
+  display: flex;
+  gap: 14rpx;
+  align-items: center;
+  margin-top: 16rpx;
+}
+
+.summary-child-update-name {
+  flex: 0 0 120rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #365e4a;
+}
+
+.summary-child-update-input {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  padding: 14rpx 16rpx;
+  font-size: 24rpx;
+  color: #365e4a;
+  background: #f7faf8;
+  border: 1rpx solid #dfece3;
+  border-radius: 14rpx;
+}
+
+.summary-actions {
+  display: flex;
+  gap: 12rpx;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+}
+
+.summary-correction-panel,
+.summary-correction-editor {
+  padding: 20rpx;
+  margin-top: 24rpx;
+  background: #fffaf0;
+  border: 1rpx solid #f1dfb8;
+  border-radius: 18rpx;
+}
+
+.summary-correction-panel .muted-text {
+  margin: 10rpx 0 16rpx;
+}
+
+.summary-correction-editor .summary-textarea {
+  min-height: 260rpx;
+  margin-top: 14rpx;
+}
+
+.summary-correction-editor .summary-child-update-input {
+  display: block;
+  width: 100%;
+  margin-top: 14rpx;
+}
+
+.summary-version-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 16rpx;
+  padding: 18rpx 0;
+  font-size: 24rpx;
+  color: #365e4a;
+  border-bottom: 1rpx solid #edf3ee;
+}
+
+.summary-version-row:last-child {
+  border-bottom: 0;
+}
+
+/* 每日总结：编辑区突出内容，版本和更正信息清晰分层。 */
+.summary-page {
+  background: #f9f5e8;
+}
+
+.summary-page .summary-toolbar,
+.summary-page .summary-card {
+  background: #fff;
+  border: 1rpx solid #eee7d7;
+  border-radius: 32rpx;
+  box-shadow: 0 14rpx 34rpx rgb(86 78 45 / 8%);
+}
+
+.summary-page .summary-textarea,
+.summary-page .summary-child-update-input {
+  color: #30343b;
+  background: #fcf7e8;
+  border-color: #ede3c9;
+  border-radius: 18rpx;
+}
+
+.summary-page .summary-child-updates,
+.summary-page .summary-version-row {
+  border-color: #eee7d7;
+}
+
+.summary-page .summary-child-updates-title,
+.summary-page .summary-child-update-name,
+.summary-page .summary-version-row {
+  color: #555b63;
+}
+
+.summary-page .summary-correction-panel,
+.summary-page .summary-correction-editor {
+  background: #fff9e7;
+  border-color: #f3dfaa;
+  border-radius: 22rpx;
+}

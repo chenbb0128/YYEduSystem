@@ -1,0 +1,44 @@
+.state-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280rpx;
+  padding: 56rpx 32rpx;
+  color: #666;
+  text-align: center;
+}
+
+.state-view__spinner {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 24rpx;
+  border: 4rpx solid #dbe8ff;
+  border-top-color: #165dff;
+  border-radius: 50%;
+  animation: state-view-spin 800ms linear infinite;
+}
+
+.state-view__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #30343b;
+}
+
+.state-view__description {
+  max-width: 600rpx;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #666;
+}
+
+.state-view__action {
+  margin-top: 24rpx;
+}
+
+@keyframes state-view-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

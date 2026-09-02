@@ -1,0 +1,54 @@
+{
+  "name": "tuoguan-weapp",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "description": "星芽托管助手微信小程序",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "dev": "wv dev",
+    "dev:web": "wv dev -p web --host",
+    "dev:open": "wv dev -o",
+    "build": "wv build",
+    "build:web": "wv build -p web",
+    "open": "wv open",
+    "g": "wv generate",
+    "prepare:weapp": "wv prepare",
+    "screenshot": "wv screenshot",
+    "compare": "wv compare",
+    "ide:logs": "wv ide logs --open",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "stylelint": "stylelint \"src/**/*.{css,wxss}\" --allow-empty-input",
+    "check": "pnpm typecheck && pnpm lint && pnpm stylelint && pnpm build && pnpm build:web",
+    "lint:fix": "eslint . --fix",
+    "stylelint:fix": "stylelint \"src/**/*.{css,wxss}\" --fix --allow-empty-input",
+    "init:project": "node scripts/init-project.mjs",
+    "postinstall": "wv prepare"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "lit": "3.3.0",
+    "pinia": "^3.0.3",
+    "tdesign-miniprogram": "^1.16.0",
+    "vue": "^3.5.18"
+  },
+  "devDependencies": {
+    "@icebreakers/eslint-config": "^7.0.2",
+    "@icebreakers/stylelint-config": "^5.0.3",
+    "@types/node": "^26.2.0",
+    "eslint": "^10.8.1",
+    "miniprogram-api-typings": "^5.2.3",
+    "postcss": "^8.5.26",
+    "stylelint": "^17.14.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "vite": "8.2.1",
+    "weapp-tailwindcss": "^5.2.14",
+    "weapp-vite": "^6.19.4"
+  }
+}
