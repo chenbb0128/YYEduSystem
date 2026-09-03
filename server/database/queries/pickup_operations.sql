@@ -19,8 +19,8 @@ LIMIT 1;
 -- name: CreatePickupOperation :execresult
 INSERT INTO pickup_operations (
     organization_id, operation_date, pickup_mode, school_id, school_class_id,
-    care_class_id, teacher_user_id, teacher_name, status, notes
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?);
+    care_class_id, teacher_user_id, teacher_name, status, expected_pickup_time, notes
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?);
 
 -- name: UpdatePickupOperationStatus :execresult
 UPDATE pickup_operations

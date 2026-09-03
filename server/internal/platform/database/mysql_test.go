@@ -27,7 +27,7 @@ func TestNormalizeMySQLDSN(t *testing.T) {
 	if cfg.Loc != time.UTC {
 		t.Fatalf("Loc = %v, want UTC", cfg.Loc)
 	}
-	if cfg.Params["time_zone"] != "+00:00" {
-		t.Fatalf("time_zone = %q, want +00:00", cfg.Params["time_zone"])
+	if cfg.Params["time_zone"] != "'+00:00'" {
+		t.Fatalf("time_zone = %q, want '+00:00'", cfg.Params["time_zone"])
 	}
 }

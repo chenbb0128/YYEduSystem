@@ -26,6 +26,7 @@ type Handler struct {
 	masterData         masterdata.Store
 	photos             storage.Store
 	photoSigner        *storage.URLSigner
+	photoURLTTL        time.Duration
 	assets             mediamodule.Store
 	assetRetentionDays int
 	leaveReader        LeaveReader
@@ -44,7 +45,7 @@ func NewHandler(store Store, masterData masterdata.Store, photos storage.Store, 
 	if len(leaveReaders) > 0 {
 		leaveReader = leaveReaders[0]
 	}
-	return &Handler{store: store, masterData: masterData, photos: photos, leaveReader: leaveReader, orgID: masterdata.DefaultOrganizationID}
+	return &Handler{store: store, masterData: masterData, photos: photos, photoURLTTL: 15 * time.Minute, leaveReader: leaveReader, orgID: masterdata.DefaultOrganizationID}
 }
 
 // SetStaffScope enables identity-aware access control while keeping the focused
@@ -56,6 +57,12 @@ func (h *Handler) SetStaffScope(assignments assignment.Store, users identity.Use
 
 func (h *Handler) SetPhotoSigner(signer *storage.URLSigner) { h.photoSigner = signer }
 
+func (h *Handler) SetPhotoURLTTL(ttl time.Duration) {
+	if ttl > 0 {
+		h.photoURLTTL = ttl
+	}
+}
+
 func (h *Handler) SetAssetStore(store mediamodule.Store) { h.assets = store }
 
 func (h *Handler) SetAssetRetentionDays(days int) { h.assetRetentionDays = days }
@@ -63,7 +70,7 @@ func (h *Handler) SetAssetRetentionDays(days int) { h.assetRetentionDays = days 
 func (h *Handler) SetAuditWriter(writer auditmodule.Writer) { h.audit = writer }
 
 func (h *Handler) recordAudit(c *gin.Context, action, resourceType string, resourceID uint64) {
-	auditmodule.RecordForContext(c.Request.Context(), h.audit, h.orgID, action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
+	auditmodule.RecordForContext(c.Request.Context(), h.audit, identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
 }
 
 func (h *Handler) RegisterRoutes(api *gin.RouterGroup) {
@@ -203,14 +210,15 @@ type notificationDeliveryLogView struct {
 }
 
 type createOperationRequest struct {
-	OperationDate string   `json:"operation_date"`
-	PickupMode    string   `json:"pickup_mode"`
-	SchoolClassID uint64   `json:"school_class_id"`
-	CareClassID   *uint64  `json:"care_class_id"`
-	TeacherUserID *uint64  `json:"teacher_user_id"`
-	TeacherName   string   `json:"teacher_name"`
-	StudentIDs    []uint64 `json:"student_ids"`
-	Notes         string   `json:"notes"`
+	OperationDate      string   `json:"operation_date"`
+	PickupMode         string   `json:"pickup_mode"`
+	SchoolClassID      uint64   `json:"school_class_id"`
+	CareClassID        *uint64  `json:"care_class_id"`
+	TeacherUserID      *uint64  `json:"teacher_user_id"`
+	TeacherName        string   `json:"teacher_name"`
+	ExpectedPickupTime string   `json:"expected_pickup_time"`
+	StudentIDs         []uint64 `json:"student_ids"`
+	Notes              string   `json:"notes"`
 }
 
 func (r createOperationRequest) Validate() []response.ValidationDetail {
@@ -223,6 +231,9 @@ func (r createOperationRequest) Validate() []response.ValidationDetail {
 	}
 	if r.PickupMode != "" && r.PickupMode != "school_pickup" && r.PickupMode != "self_arrival" {
 		details = append(details, response.ValidationDetail{Field: "pickup_mode", Reason: "invalid_value"})
+	}
+	if len([]rune(strings.TrimSpace(r.ExpectedPickupTime))) > 16 {
+		details = append(details, response.ValidationDetail{Field: "expected_pickup_time", Reason: "too_long"})
 	}
 	return details
 }
@@ -404,7 +415,7 @@ func (r reviewChangeRequest) Validate() []response.ValidationDetail {
 }
 
 func (h *Handler) listOperations(c *gin.Context) {
-	items, err := h.store.ListOperations(c.Request.Context(), h.orgID)
+	items, err := h.store.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -454,7 +465,7 @@ func (h *Handler) createOperation(c *gin.Context) {
 		return
 	}
 	operationDate, _ := parseDate(req.OperationDate)
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -470,7 +481,7 @@ func (h *Handler) createOperation(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -504,7 +515,7 @@ func (h *Handler) createOperation(c *gin.Context) {
 		return
 	}
 	if h.leaveReader != nil {
-		approvedLeaveIDs, leaveErr := h.leaveReader.ListApprovedLeaveStudentIDs(c.Request.Context(), h.orgID, operationDate)
+		approvedLeaveIDs, leaveErr := h.leaveReader.ListApprovedLeaveStudentIDs(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationDate)
 		if leaveErr != nil {
 			response.Error(c, response.Internal(leaveErr))
 			return
@@ -521,7 +532,7 @@ func (h *Handler) createOperation(c *gin.Context) {
 			return
 		}
 	}
-	item, err := h.store.CreateOperation(c.Request.Context(), h.orgID, CreateOperationParams{OperationDate: operationDate, PickupMode: defaultString(req.PickupMode, "school_pickup"), SchoolID: selectedClass.SchoolID, SchoolClassID: selectedClass.ID, CareClassID: req.CareClassID, TeacherUserID: teacherUserID, TeacherName: teacherName, Notes: strings.TrimSpace(req.Notes)}, roster)
+	item, err := h.store.CreateOperation(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateOperationParams{OperationDate: operationDate, PickupMode: defaultString(req.PickupMode, "school_pickup"), SchoolID: selectedClass.SchoolID, SchoolClassID: selectedClass.ID, CareClassID: req.CareClassID, TeacherUserID: teacherUserID, TeacherName: teacherName, ExpectedPickupTime: strings.TrimSpace(req.ExpectedPickupTime), Notes: strings.TrimSpace(req.Notes)}, roster)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -564,12 +575,12 @@ func (h *Handler) confirmOperation(c *gin.Context) {
 	if confirmedByID == nil {
 		confirmedByID = resolvedID
 	}
-	item, err := h.store.ConfirmOperation(c.Request.Context(), h.orgID, ConfirmOperationParams{ID: id, ExecutingTeacherUserID: resolvedID, ExecutingTeacherName: resolvedName, TeacherRole: defaultString(req.TeacherRole, "lead"), ExpectedPickupTime: strings.TrimSpace(req.ExpectedPickupTime), ConfirmedByUserID: confirmedByID, ConfirmedByName: confirmedByName, Notes: strings.TrimSpace(req.Notes)})
+	item, err := h.store.ConfirmOperation(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ConfirmOperationParams{ID: id, ExecutingTeacherUserID: resolvedID, ExecutingTeacherName: resolvedName, TeacherRole: defaultString(req.TeacherRole, "lead"), ExpectedPickupTime: strings.TrimSpace(req.ExpectedPickupTime), ConfirmedByUserID: confirmedByID, ConfirmedByName: confirmedByName, Notes: strings.TrimSpace(req.Notes)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	students, err := h.store.ListOperationStudents(c.Request.Context(), h.orgID, id)
+	students, err := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err == nil {
 		h.notifyOperationConfirmed(c, item, students)
 	}
@@ -604,12 +615,12 @@ func (h *Handler) handoverOperation(c *gin.Context) {
 		return
 	}
 	createdByID, createdByName := h.currentStaff(c)
-	item, err := h.store.HandoffOperation(c.Request.Context(), h.orgID, HandoffOperationParams{ID: id, ToTeacherUserID: req.ToTeacherUserID, ToTeacherName: teacherName, TeacherRole: defaultString(req.TeacherRole, "collaborator"), Note: strings.TrimSpace(req.Note), CreatedByUserID: createdByID, CreatedByName: createdByName})
+	item, err := h.store.HandoffOperation(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), HandoffOperationParams{ID: id, ToTeacherUserID: req.ToTeacherUserID, ToTeacherName: teacherName, TeacherRole: defaultString(req.TeacherRole, "collaborator"), Note: strings.TrimSpace(req.Note), CreatedByUserID: createdByID, CreatedByName: createdByName})
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	if students, listErr := h.store.ListOperationStudents(c.Request.Context(), h.orgID, id); listErr == nil {
+	if students, listErr := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id); listErr == nil {
 		h.notifyOperationHandover(c, item, students)
 	}
 	h.recordAudit(c, "pickup.operation.handover", "pickup_operation", id)
@@ -657,7 +668,7 @@ func (h *Handler) notifyOperationHandover(c *gin.Context, operation Operation, s
 		content += "，预计" + strings.TrimSpace(operation.ExpectedPickupTime)
 	}
 	for _, student := range students {
-		_, _ = h.store.CreateNotification(c.Request.Context(), h.orgID, CreateNotificationParams{StudentID: student.StudentID, OperationID: &operation.ID, Kind: "pickup_plan_confirmed", Title: "今日接送老师已变更", Content: student.StudentName + "：" + content})
+		_, _ = h.store.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateNotificationParams{StudentID: student.StudentID, OperationID: &operation.ID, Kind: "pickup_plan_confirmed", Title: "今日接送老师已变更", Content: student.StudentName + "：" + content})
 	}
 }
 
@@ -669,7 +680,7 @@ func (h *Handler) listHandoffs(c *gin.Context) {
 	if _, ok := h.operationForPrincipal(c, id); !ok {
 		return
 	}
-	items, err := h.store.ListHandoffs(c.Request.Context(), h.orgID, id)
+	items, err := h.store.ListHandoffs(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -694,7 +705,7 @@ func (h *Handler) listHandoffTeachers(c *gin.Context) {
 		response.OK(c, listResponse[handoffTeacherView]{Items: []handoffTeacherView{}, Total: 0})
 		return
 	}
-	items, err := h.assignments.List(c.Request.Context(), h.orgID, 0, operation.SchoolClassID)
+	items, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), 0, operation.SchoolClassID)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -754,7 +765,7 @@ func (h *Handler) notifyOperationConfirmed(c *gin.Context, operation Operation, 
 	}
 	content += "。如接送方式有变化，请及时提交临时变更。"
 	for _, student := range students {
-		_, _ = h.store.CreateNotification(c.Request.Context(), h.orgID, CreateNotificationParams{StudentID: student.StudentID, OperationID: &operation.ID, Kind: "pickup_plan_confirmed", Title: "今日接送安排已确认", Content: student.StudentName + "：" + content})
+		_, _ = h.store.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateNotificationParams{StudentID: student.StudentID, OperationID: &operation.ID, Kind: "pickup_plan_confirmed", Title: "今日接送安排已确认", Content: student.StudentName + "：" + content})
 	}
 }
 
@@ -791,7 +802,7 @@ func (h *Handler) workbench(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "date", Reason: "date_format"}}))
 		return
 	}
-	items, err := h.store.ListOperations(c.Request.Context(), h.orgID)
+	items, err := h.store.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -808,7 +819,7 @@ func (h *Handler) workbench(c *gin.Context) {
 		if !sameDay(operation.OperationDate, date) {
 			continue
 		}
-		students, listErr := h.store.ListOperationStudents(c.Request.Context(), h.orgID, operation.ID)
+		students, listErr := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operation.ID)
 		if listErr != nil {
 			respondStoreError(c, listErr)
 			return
@@ -855,7 +866,7 @@ func (h *Handler) closeCheck(c *gin.Context) {
 	if !ok {
 		return
 	}
-	students, err := h.store.ListOperationStudents(c.Request.Context(), h.orgID, id)
+	students, err := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -897,7 +908,7 @@ func (h *Handler) addOperationStudent(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -913,12 +924,12 @@ func (h *Handler) addOperationStudent(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	student, err := h.masterData.CreateStudent(c.Request.Context(), h.orgID, masterdata.CreateStudentParams{SchoolID: selectedClass.SchoolID, TermID: selectedClass.TermID, SchoolClassID: selectedClass.ID, CareClassID: operation.CareClassID, Name: strings.TrimSpace(req.Name), Gender: defaultString(req.Gender, "unknown"), StudentNo: strings.TrimSpace(req.StudentNo), GuardianPhone: strings.TrimSpace(req.GuardianPhone), Notes: strings.TrimSpace(req.Note)})
+	student, err := h.masterData.CreateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), masterdata.CreateStudentParams{SchoolID: selectedClass.SchoolID, TermID: selectedClass.TermID, SchoolClassID: selectedClass.ID, CareClassID: operation.CareClassID, Name: strings.TrimSpace(req.Name), Gender: defaultString(req.Gender, "unknown"), StudentNo: strings.TrimSpace(req.StudentNo), GuardianPhone: strings.TrimSpace(req.GuardianPhone), Notes: strings.TrimSpace(req.Note)})
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
 	}
-	item, err := h.store.AddOperationStudent(c.Request.Context(), h.orgID, AddOperationStudentParams{OperationID: id, StudentID: student.ID, StudentName: student.Name, IsTemporary: true, ProfilePending: strings.TrimSpace(req.GuardianPhone) == "", PickupMode: strings.TrimSpace(req.PickupMode), Note: strings.TrimSpace(req.Note)})
+	item, err := h.store.AddOperationStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), AddOperationStudentParams{OperationID: id, StudentID: student.ID, StudentName: student.Name, IsTemporary: true, ProfilePending: strings.TrimSpace(req.GuardianPhone) == "", PickupMode: strings.TrimSpace(req.PickupMode), Note: strings.TrimSpace(req.Note)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -948,7 +959,7 @@ func (h *Handler) completeOperationStudentProfile(c *gin.Context) {
 		return
 	}
 
-	members, err := h.store.ListOperationStudents(c.Request.Context(), h.orgID, operationID)
+	members, err := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -969,7 +980,7 @@ func (h *Handler) completeOperationStudentProfile(c *gin.Context) {
 		return
 	}
 
-	student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, studentID)
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID)
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -1012,18 +1023,18 @@ func (h *Handler) completeOperationStudentProfile(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "guardian_phone", Reason: "required"}}))
 		return
 	}
-	updatedStudent, err := h.masterData.UpdateStudent(c.Request.Context(), h.orgID, params)
+	updatedStudent, err := h.masterData.UpdateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), params)
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
 	}
 	if operationStudent.ProfilePending {
-		if err := h.store.CompleteOperationStudentProfile(c.Request.Context(), h.orgID, operationID, studentID); err != nil {
+		if err := h.store.CompleteOperationStudentProfile(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID, studentID); err != nil {
 			respondStoreError(c, err)
 			return
 		}
 	}
-	updatedMembers, err := h.store.ListOperationStudents(c.Request.Context(), h.orgID, operationID)
+	updatedMembers, err := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1054,7 +1065,7 @@ func (h *Handler) listOperationStudents(c *gin.Context) {
 	if _, ok := h.operationForPrincipal(c, operationID); !ok {
 		return
 	}
-	items, err := h.store.ListOperationStudents(c.Request.Context(), h.orgID, operationID)
+	items, err := h.store.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1083,7 +1094,7 @@ func (h *Handler) setOperationStatus(c *gin.Context, status string) {
 	if !ok {
 		return
 	}
-	item, err := h.store.SetOperationStatus(c.Request.Context(), h.orgID, SetOperationStatusParams{ID: id, Status: status})
+	item, err := h.store.SetOperationStatus(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), SetOperationStatusParams{ID: id, Status: status})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1099,7 +1110,7 @@ func (h *Handler) setOperationStatus(c *gin.Context, status string) {
 }
 
 func (h *Handler) applyApprovedPickupChanges(c *gin.Context, operation Operation) error {
-	changes, err := h.store.ListPickupChangeRequests(c.Request.Context(), h.orgID, &operation.OperationDate, ChangeRequestStatusApproved)
+	changes, err := h.store.ListPickupChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &operation.OperationDate, ChangeRequestStatusApproved)
 	if err != nil {
 		return err
 	}
@@ -1114,7 +1125,7 @@ func (h *Handler) applyApprovedPickupChanges(c *gin.Context, operation Operation
 		latestByStudent[change.StudentID] = change
 	}
 	for _, change := range latestByStudent {
-		if _, err := h.store.MarkOperationStudent(c.Request.Context(), h.orgID, MarkStudentParams{OperationID: operation.ID, StudentID: change.StudentID, Status: change.RequestedStatus, OperatorName: "老师", Note: change.Note}); err != nil {
+		if _, err := h.store.MarkOperationStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), MarkStudentParams{OperationID: operation.ID, StudentID: change.StudentID, Status: change.RequestedStatus, OperatorName: "老师", Note: change.Note}); err != nil {
 			return err
 		}
 	}
@@ -1141,7 +1152,7 @@ func (h *Handler) markOperationStudent(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.MarkOperationStudent(c.Request.Context(), h.orgID, MarkStudentParams{OperationID: operationID, StudentID: studentID, Status: req.Status, PhotoURL: strings.TrimSpace(req.PhotoURL), OperatorName: strings.TrimSpace(req.OperatorName), Note: strings.TrimSpace(req.Note)})
+	item, err := h.store.MarkOperationStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), MarkStudentParams{OperationID: operationID, StudentID: studentID, Status: req.Status, PhotoURL: strings.TrimSpace(req.PhotoURL), OperatorName: strings.TrimSpace(req.OperatorName), Note: strings.TrimSpace(req.Note)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1158,7 +1169,7 @@ func (h *Handler) listEvents(c *gin.Context) {
 	if _, ok := h.operationForPrincipal(c, operationID); !ok {
 		return
 	}
-	items, err := h.store.ListEvents(c.Request.Context(), h.orgID, operationID)
+	items, err := h.store.ListEvents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1191,7 +1202,7 @@ func (h *Handler) correctEvent(c *gin.Context) {
 		return
 	}
 	_, operatorName := h.currentStaff(c)
-	item, err := h.store.CorrectOperationEvent(c.Request.Context(), h.orgID, CorrectEventParams{OperationID: operationID, EventID: eventID, Status: strings.TrimSpace(req.Status), OperatorName: operatorName, Reason: strings.TrimSpace(req.Reason)})
+	item, err := h.store.CorrectOperationEvent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CorrectEventParams{OperationID: operationID, EventID: eventID, Status: strings.TrimSpace(req.Status), OperatorName: operatorName, Reason: strings.TrimSpace(req.Reason)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1201,7 +1212,7 @@ func (h *Handler) correctEvent(c *gin.Context) {
 }
 
 func (h *Handler) listNotifications(c *gin.Context) {
-	items, err := h.store.ListNotifications(c.Request.Context(), h.orgID)
+	items, err := h.store.ListNotifications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1238,7 +1249,7 @@ func (h *Handler) listNotificationDeliveryLogs(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "message_kind", Reason: "invalid_value"}}))
 		return
 	}
-	items, err := h.store.ListNotificationDeliveryLogs(c.Request.Context(), h.orgID, notificationID, strings.TrimSpace(c.Query("status")))
+	items, err := h.store.ListNotificationDeliveryLogs(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), notificationID, strings.TrimSpace(c.Query("status")))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1252,7 +1263,7 @@ func (h *Handler) listNotificationDeliveryLogs(c *gin.Context) {
 		}
 		items = filtered
 	}
-	notifications, err := h.store.ListNotifications(c.Request.Context(), h.orgID)
+	notifications, err := h.store.ListNotifications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1263,7 +1274,7 @@ func (h *Handler) listNotificationDeliveryLogs(c *gin.Context) {
 	}
 	studentNames := make(map[uint64]string)
 	if h.masterData != nil {
-		students, studentErr := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+		students, studentErr := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if studentErr != nil {
 			respondStoreError(c, studentErr)
 			return
@@ -1299,7 +1310,7 @@ func (h *Handler) retryNotification(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.store.RetryNotification(c.Request.Context(), h.orgID, id); err != nil {
+	if err := h.store.RetryNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id); err != nil {
 		respondStoreError(c, err)
 		return
 	}
@@ -1315,7 +1326,7 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.store.MarkNotificationRead(c.Request.Context(), h.orgID, id); err != nil {
+	if err := h.store.MarkNotificationRead(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id); err != nil {
 		respondStoreError(c, err)
 		return
 	}
@@ -1340,7 +1351,7 @@ func (h *Handler) listChangeRequests(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "date", Reason: "date_format"}}))
 		return
 	}
-	items, err := h.store.ListPickupChangeRequests(c.Request.Context(), h.orgID, date, strings.TrimSpace(c.Query("status")))
+	items, err := h.store.ListPickupChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), date, strings.TrimSpace(c.Query("status")))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1372,7 +1383,7 @@ func (h *Handler) reviewChangeRequest(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	existingItems, err := h.store.ListPickupChangeRequests(c.Request.Context(), h.orgID, nil, "")
+	existingItems, err := h.store.ListPickupChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil, "")
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -1396,15 +1407,15 @@ func (h *Handler) reviewChangeRequest(c *gin.Context) {
 		return
 	}
 	reviewerID, _ := h.currentStaff(c)
-	item, err := h.store.ReviewPickupChangeRequest(c.Request.Context(), h.orgID, ReviewPickupChangeRequestParams{ID: id, Status: req.Status, ReviewedByUserID: reviewerID, ReviewNote: strings.TrimSpace(req.ReviewNote)})
+	item, err := h.store.ReviewPickupChangeRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewPickupChangeRequestParams{ID: id, Status: req.Status, ReviewedByUserID: reviewerID, ReviewNote: strings.TrimSpace(req.ReviewNote)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
 	if item.Status == ChangeRequestStatusApproved && item.OperationID != nil {
-		operation, findErr := h.store.FindOperation(c.Request.Context(), h.orgID, *item.OperationID)
+		operation, findErr := h.store.FindOperation(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), *item.OperationID)
 		if findErr == nil && operation.Status == OperationStatusStarted {
-			_, _ = h.store.MarkOperationStudent(c.Request.Context(), h.orgID, MarkStudentParams{OperationID: *item.OperationID, StudentID: item.StudentID, Status: item.RequestedStatus, OperatorName: "老师", Note: item.Note})
+			_, _ = h.store.MarkOperationStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), MarkStudentParams{OperationID: *item.OperationID, StudentID: item.StudentID, Status: item.RequestedStatus, OperatorName: "老师", Note: item.Note})
 		}
 	}
 	statusText := "已同意"
@@ -1415,7 +1426,7 @@ func (h *Handler) reviewChangeRequest(c *gin.Context) {
 	if strings.TrimSpace(item.ReviewNote) != "" {
 		content += "；老师备注：" + strings.TrimSpace(item.ReviewNote)
 	}
-	_, _ = h.store.CreateNotification(c.Request.Context(), h.orgID, CreateNotificationParams{StudentID: item.StudentID, OperationID: item.OperationID, Kind: "pickup_change_review", Title: "临时接送变更" + statusText, Content: content})
+	_, _ = h.store.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateNotificationParams{StudentID: item.StudentID, OperationID: item.OperationID, Kind: "pickup_change_review", Title: "临时接送变更" + statusText, Content: content})
 	h.recordAudit(c, "pickup.change_request.review", "pickup_change_request", item.ID)
 	response.OK(c, toPickupChangeRequestView(item))
 }
@@ -1425,7 +1436,7 @@ func (h *Handler) changeRequestStudentAllowed(c *gin.Context, studentID uint64) 
 	if !scoped || principal.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return true
 	}
-	student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, studentID)
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID)
 	if err != nil {
 		return false
 	}
@@ -1500,7 +1511,7 @@ func (h *Handler) recordAsset(c *gin.Context, asset storage.Asset, resourceType 
 		value := time.Now().UTC().AddDate(0, 0, h.assetRetentionDays)
 		retentionUntil = &value
 	}
-	_, err := h.assets.Create(c.Request.Context(), h.orgID, mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
+	_, err := h.assets.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
 	return err
 }
 
@@ -1518,7 +1529,7 @@ func (h *Handler) filterOperationsForPrincipal(c *gin.Context, items []Operation
 	if !scoped || principal.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return items, nil
 	}
-	assigned, err := h.assignments.List(c.Request.Context(), h.orgID, principal.SubjectID, 0)
+	assigned, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1542,7 +1553,7 @@ func (h *Handler) filterNotificationsForPrincipal(c *gin.Context, items []Notifi
 	if !scoped || principal.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return items, nil
 	}
-	operations, err := h.store.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.store.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return nil, err
 	}
@@ -1559,7 +1570,7 @@ func (h *Handler) filterNotificationsForPrincipal(c *gin.Context, items []Notifi
 	// teacher notification center does not silently hide those daily messages.
 	allowedStudents := make(map[uint64]struct{})
 	if h.masterData != nil {
-		assigned, assignmentErr := h.assignments.List(c.Request.Context(), h.orgID, principal.SubjectID, 0)
+		assigned, assignmentErr := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, 0)
 		if assignmentErr != nil {
 			return nil, assignmentErr
 		}
@@ -1569,7 +1580,7 @@ func (h *Handler) filterNotificationsForPrincipal(c *gin.Context, items []Notifi
 				assignedClasses[item.SchoolClassID] = struct{}{}
 			}
 		}
-		students, studentErr := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+		students, studentErr := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if studentErr != nil {
 			return nil, studentErr
 		}
@@ -1598,7 +1609,7 @@ func (h *Handler) filterNotificationsForPrincipal(c *gin.Context, items []Notifi
 }
 
 func (h *Handler) operationForPrincipal(c *gin.Context, operationID uint64) (Operation, bool) {
-	item, err := h.store.FindOperation(c.Request.Context(), h.orgID, operationID)
+	item, err := h.store.FindOperation(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operationID)
 	if err != nil {
 		respondStoreError(c, err)
 		return Operation{}, false
@@ -1615,7 +1626,7 @@ func (h *Handler) operationAllowed(c *gin.Context, operation Operation) bool {
 	if !scoped || h.assignments == nil || principal.Role != identity.UserRoleTeacher {
 		return true
 	}
-	assigned, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, principal.SubjectID, operation.SchoolClassID)
+	assigned, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, operation.SchoolClassID)
 	return err == nil && assigned.Status == assignment.AssignmentStatusActive
 }
 
@@ -1663,7 +1674,7 @@ func (h *Handler) resolveOperationTeacher(c *gin.Context, schoolClassID uint64, 
 }
 
 func (h *Handler) requireAssignment(c *gin.Context, teacherUserID, schoolClassID uint64) error {
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, teacherUserID, schoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), teacherUserID, schoolClassID)
 	if err != nil {
 		if errors.Is(err, assignment.ErrNotFound) {
 			return ErrUnauthorizedOperation
@@ -1754,7 +1765,7 @@ func (h *Handler) signedPhotoURL(value string) string {
 	if h.photoSigner == nil || strings.TrimSpace(value) == "" {
 		return value
 	}
-	return h.photoSigner.Sign(value, 15*time.Minute)
+	return h.photoSigner.Sign(value, h.photoURLTTL)
 }
 
 func canWritePickup(c *gin.Context) bool {

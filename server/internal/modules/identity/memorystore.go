@@ -23,7 +23,7 @@ func NewMemoryStore() *MemoryStore {
 	now := time.Now().UTC()
 	return &MemoryStore{
 		nextID: 2,
-		users:  []User{{ID: 1, Username: "admin", PasswordHash: string(hash), Role: UserRoleAdmin, Nickname: "管理员", Status: UserStatusActive, CreatedAt: now, UpdatedAt: now}},
+		users:  []User{{ID: 1, OrganizationID: defaultOrganizationID, OrganizationStatus: "active", Username: "admin", PasswordHash: string(hash), Role: UserRoleAdmin, Nickname: "管理员", Status: UserStatusActive, CreatedAt: now, UpdatedAt: now}},
 	}
 }
 
@@ -36,7 +36,11 @@ func (s *MemoryStore) CreateUser(_ context.Context, params CreateUserParams) (Us
 		}
 	}
 	now := time.Now().UTC()
-	item := User{ID: s.nextID, Username: strings.TrimSpace(params.Username), PasswordHash: params.PasswordHash, Role: params.Role, Nickname: strings.TrimSpace(params.Nickname), Avatar: strings.TrimSpace(params.Avatar), Status: params.Status, CreatedAt: now, UpdatedAt: now}
+	organizationID := params.OrganizationID
+	if organizationID == 0 {
+		organizationID = defaultOrganizationID
+	}
+	item := User{ID: s.nextID, OrganizationID: organizationID, OrganizationStatus: "active", Username: strings.TrimSpace(params.Username), PasswordHash: params.PasswordHash, Role: params.Role, Nickname: strings.TrimSpace(params.Nickname), Avatar: strings.TrimSpace(params.Avatar), Status: params.Status, CreatedAt: now, UpdatedAt: now}
 	s.nextID++
 	s.users = append(s.users, item)
 	return item, nil

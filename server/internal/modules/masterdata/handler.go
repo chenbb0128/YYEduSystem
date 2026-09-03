@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -288,27 +289,27 @@ func (r studentRequest) Validate() []response.ValidationDetail {
 }
 
 func (h *Handler) summary(c *gin.Context) {
-	schools, err := h.store.ListSchools(c.Request.Context(), h.orgID)
+	schools, err := h.store.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	terms, err := h.store.ListAcademicTerms(c.Request.Context(), h.orgID)
+	terms, err := h.store.ListAcademicTerms(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	schoolClasses, err := h.store.ListSchoolClasses(c.Request.Context(), h.orgID)
+	schoolClasses, err := h.store.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	careClasses, err := h.store.ListCareClasses(c.Request.Context(), h.orgID)
+	careClasses, err := h.store.ListCareClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
 	}
-	students, err := h.store.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.store.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -317,7 +318,7 @@ func (h *Handler) summary(c *gin.Context) {
 }
 
 func (h *Handler) listSchools(c *gin.Context) {
-	items, err := h.store.ListSchools(c.Request.Context(), h.orgID)
+	items, err := h.store.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -335,7 +336,7 @@ func (h *Handler) createSchool(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.CreateSchool(c.Request.Context(), h.orgID, CreateSchoolParams{Name: strings.TrimSpace(req.Name), Address: strings.TrimSpace(req.Address), ContactPhone: strings.TrimSpace(req.ContactPhone)})
+	item, err := h.store.CreateSchool(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateSchoolParams{Name: strings.TrimSpace(req.Name), Address: strings.TrimSpace(req.Address), ContactPhone: strings.TrimSpace(req.ContactPhone)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -344,7 +345,7 @@ func (h *Handler) createSchool(c *gin.Context) {
 }
 
 func (h *Handler) listAcademicTerms(c *gin.Context) {
-	items, err := h.store.ListAcademicTerms(c.Request.Context(), h.orgID)
+	items, err := h.store.ListAcademicTerms(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -368,7 +369,7 @@ func (h *Handler) createAcademicTerm(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "ends_on", Reason: "must_not_be_before_starts_on"}}))
 		return
 	}
-	item, err := h.store.CreateAcademicTerm(c.Request.Context(), h.orgID, CreateAcademicTermParams{Name: strings.TrimSpace(req.Name), StartsOn: startsOn, EndsOn: endsOn, IsCurrent: req.IsCurrent})
+	item, err := h.store.CreateAcademicTerm(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateAcademicTermParams{Name: strings.TrimSpace(req.Name), StartsOn: startsOn, EndsOn: endsOn, IsCurrent: req.IsCurrent})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -377,7 +378,7 @@ func (h *Handler) createAcademicTerm(c *gin.Context) {
 }
 
 func (h *Handler) listSchoolClasses(c *gin.Context) {
-	items, err := h.store.ListSchoolClasses(c.Request.Context(), h.orgID)
+	items, err := h.store.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -404,7 +405,7 @@ func (h *Handler) createSchoolClass(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.CreateSchoolClass(c.Request.Context(), h.orgID, CreateSchoolClassParams{SchoolID: req.SchoolID, TermID: req.TermID, Grade: strings.TrimSpace(req.Grade), Name: strings.TrimSpace(req.Name)})
+	item, err := h.store.CreateSchoolClass(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateSchoolClassParams{SchoolID: req.SchoolID, TermID: req.TermID, Grade: strings.TrimSpace(req.Grade), Name: strings.TrimSpace(req.Name)})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -413,7 +414,7 @@ func (h *Handler) createSchoolClass(c *gin.Context) {
 }
 
 func (h *Handler) listCareClasses(c *gin.Context) {
-	items, err := h.store.ListCareClasses(c.Request.Context(), h.orgID)
+	items, err := h.store.ListCareClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -431,7 +432,7 @@ func (h *Handler) createCareClass(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.CreateCareClass(c.Request.Context(), h.orgID, CreateCareClassParams{Name: strings.TrimSpace(req.Name), Capacity: req.Capacity})
+	item, err := h.store.CreateCareClass(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateCareClassParams{Name: strings.TrimSpace(req.Name), Capacity: req.Capacity})
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -440,7 +441,7 @@ func (h *Handler) createCareClass(c *gin.Context) {
 }
 
 func (h *Handler) listStudents(c *gin.Context) {
-	items, err := h.store.ListStudents(c.Request.Context(), h.orgID)
+	items, err := h.store.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -472,7 +473,7 @@ func (h *Handler) listStudents(c *gin.Context) {
 		})
 	}
 	if value := strings.TrimSpace(c.Query("grade")); value != "" {
-		classes, err := h.store.ListSchoolClasses(c.Request.Context(), h.orgID)
+		classes, err := h.store.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			respondStoreError(c, err)
 			return
@@ -504,7 +505,7 @@ func (h *Handler) createStudent(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.CreateStudent(c.Request.Context(), h.orgID, toCreateStudentParams(req))
+	item, err := h.store.CreateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), toCreateStudentParams(req))
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -523,7 +524,7 @@ func (h *Handler) createStudentProfile(c *gin.Context) {
 		respondStoreError(c, err)
 		return
 	}
-	item, err := h.store.CreateStudent(c.Request.Context(), h.orgID, params)
+	item, err := h.store.CreateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), params)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -547,7 +548,7 @@ func (h *Handler) updateStudent(c *gin.Context) {
 	if params.Status == "" {
 		params.Status = "active"
 	}
-	item, err := h.store.UpdateStudent(c.Request.Context(), h.orgID, params)
+	item, err := h.store.UpdateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), params)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -566,7 +567,7 @@ func (h *Handler) updateStudentProfile(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	existing, err := h.store.FindStudent(c.Request.Context(), h.orgID, id)
+	existing, err := h.store.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -592,7 +593,7 @@ func (h *Handler) updateStudentProfile(c *gin.Context) {
 		Status:           defaultString(req.Status, existing.Status),
 		Notes:            params.Notes,
 	}
-	item, err := h.store.UpdateStudent(c.Request.Context(), h.orgID, update)
+	item, err := h.store.UpdateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), update)
 	if err != nil {
 		respondStoreError(c, err)
 		return
@@ -601,7 +602,8 @@ func (h *Handler) updateStudentProfile(c *gin.Context) {
 }
 
 func (h *Handler) resolveStudentProfile(ctx context.Context, req studentProfileRequest, fallbackTermID uint64) (CreateStudentParams, error) {
-	schools, err := h.store.ListSchools(ctx, h.orgID)
+	organizationID := identity.OrganizationIDFromContext(ctx, h.orgID)
+	schools, err := h.store.ListSchools(ctx, organizationID)
 	if err != nil {
 		return CreateStudentParams{}, err
 	}
@@ -614,30 +616,30 @@ func (h *Handler) resolveStudentProfile(ctx context.Context, req studentProfileR
 		}
 	}
 	if school == nil {
-		created, createErr := h.store.CreateSchool(ctx, h.orgID, CreateSchoolParams{Name: schoolName})
+		created, createErr := h.store.CreateSchool(ctx, organizationID, CreateSchoolParams{Name: schoolName})
 		if createErr != nil && !errors.Is(createErr, ErrConflict) {
 			return CreateStudentParams{}, createErr
 		}
 		if createErr == nil {
 			school = &created
 		} else {
-			school, err = findSchool(ctx, h.store, h.orgID, schoolName)
+			school, err = findSchool(ctx, h.store, organizationID, schoolName)
 			if err != nil {
 				return CreateStudentParams{}, err
 			}
 		}
 	}
 
-	terms, err := h.store.ListAcademicTerms(ctx, h.orgID)
+	terms, err := h.store.ListAcademicTerms(ctx, organizationID)
 	if err != nil {
 		return CreateStudentParams{}, err
 	}
-	term, err := resolveTerm(ctx, h.store, h.orgID, terms, req, fallbackTermID)
+	term, err := resolveTerm(ctx, h.store, organizationID, terms, req, fallbackTermID)
 	if err != nil {
 		return CreateStudentParams{}, err
 	}
 
-	classes, err := h.store.ListSchoolClasses(ctx, h.orgID)
+	classes, err := h.store.ListSchoolClasses(ctx, organizationID)
 	if err != nil {
 		return CreateStudentParams{}, err
 	}
@@ -652,14 +654,14 @@ func (h *Handler) resolveStudentProfile(ctx context.Context, req studentProfileR
 		}
 	}
 	if schoolClass == nil {
-		created, createErr := h.store.CreateSchoolClass(ctx, h.orgID, CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: grade, Name: className})
+		created, createErr := h.store.CreateSchoolClass(ctx, organizationID, CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: grade, Name: className})
 		if createErr != nil && !errors.Is(createErr, ErrConflict) {
 			return CreateStudentParams{}, createErr
 		}
 		if createErr == nil {
 			schoolClass = &created
 		} else {
-			schoolClass, err = findSchoolClass(ctx, h.store, h.orgID, school.ID, term.ID, grade, className)
+			schoolClass, err = findSchoolClass(ctx, h.store, organizationID, school.ID, term.ID, grade, className)
 			if err != nil {
 				return CreateStudentParams{}, err
 			}
@@ -669,7 +671,7 @@ func (h *Handler) resolveStudentProfile(ctx context.Context, req studentProfileR
 	var careClassID *uint64
 	careClassName := strings.TrimSpace(req.CareClassName)
 	if careClassName != "" {
-		careClasses, listErr := h.store.ListCareClasses(ctx, h.orgID)
+		careClasses, listErr := h.store.ListCareClasses(ctx, organizationID)
 		if listErr != nil {
 			return CreateStudentParams{}, listErr
 		}
@@ -681,14 +683,14 @@ func (h *Handler) resolveStudentProfile(ctx context.Context, req studentProfileR
 			}
 		}
 		if careClass == nil {
-			created, createErr := h.store.CreateCareClass(ctx, h.orgID, CreateCareClassParams{Name: careClassName})
+			created, createErr := h.store.CreateCareClass(ctx, organizationID, CreateCareClassParams{Name: careClassName})
 			if createErr != nil && !errors.Is(createErr, ErrConflict) {
 				return CreateStudentParams{}, createErr
 			}
 			if createErr == nil {
 				careClass = &created
 			} else {
-				careClass, err = findCareClass(ctx, h.store, h.orgID, careClassName)
+				careClass, err = findCareClass(ctx, h.store, organizationID, careClassName)
 				if err != nil {
 					return CreateStudentParams{}, err
 				}

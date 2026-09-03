@@ -272,7 +272,7 @@ onMounted(loadAll);
         <p class="sprout-page-kicker">档案中心 · 学生成长档案</p>
         <h1 class="sprout-page-title">学生档案</h1>
         <p class="sprout-page-description">
-          只维护一份学生档案；学校、年级、班级和托管班在保存时自动复用或创建。
+          只维护一份学生档案；学校年级用于来源追溯，托管班级用于接送、作业和日常管理。
         </p>
       </div>
       <div class="sprout-header-actions">
@@ -294,10 +294,10 @@ onMounted(loadAll);
         class="mb-4"
         :closable="false"
         show-icon
-        title="日常不需要先新增学校、学期或班级，直接填写学生档案即可。分类数据仅用于筛选、接送、作业和历史追溯。"
+        title="家长申请审核通过后会自动生成学生档案；日常新增时也可直接填写学生，学校、年级班级和托管班级会自动归档。"
         type="info"
       />
-      <div class="sprout-filter-panel mb-4">
+      <div class="sprout-filter-panel master-data-filter-panel mb-4">
         <ElInput
           v-model="studentQuery.keyword"
           clearable
@@ -323,7 +323,7 @@ onMounted(loadAll);
           v-model="studentQuery.school_class_id"
           clearable
           class="w-56"
-          placeholder="按学校班级筛选"
+          placeholder="按学校年级/班级筛选"
           @change="loadStudents"
         >
           <ElOption
@@ -337,7 +337,7 @@ onMounted(loadAll);
           v-model="studentQuery.care_class_id"
           clearable
           class="w-44"
-          placeholder="按托管班筛选"
+          placeholder="按托管班级筛选"
           @change="loadStudents"
         >
           <ElOption
@@ -357,8 +357,10 @@ onMounted(loadAll);
           <ElOption label="在托" value="active" />
           <ElOption label="停托" value="inactive" />
         </ElSelect>
-        <ElButton @click="loadStudents">查询</ElButton>
-        <ElButton text @click="resetFilters">重置</ElButton>
+        <div class="master-data-filter-actions">
+          <ElButton type="primary" @click="loadStudents">查询</ElButton>
+          <ElButton plain @click="resetFilters">重置</ElButton>
+        </div>
       </div>
 
       <div class="sprout-table-wrap">
@@ -374,7 +376,7 @@ onMounted(loadAll);
               {{ studentClass(row as StudentRecord) }}
             </template>
           </ElTableColumn>
-          <ElTableColumn label="托管班" min-width="120">
+          <ElTableColumn label="托管班级" min-width="120">
             <template #default="{ row }">
               {{ careClassName((row as StudentRecord).care_class_id) }}
             </template>
@@ -412,9 +414,17 @@ onMounted(loadAll);
           </ElTableColumn>
           <template #empty>
             <ElEmpty
-              description="还没有学生档案，请直接新增"
+              description="还没有学生档案，先新增一名学生或通过家长申请自动生成"
               :image-size="80"
-            />
+            >
+              <ElButton
+                class="master-data-empty-action"
+                type="primary"
+                @click="openCreate"
+              >
+                新增学生
+              </ElButton>
+            </ElEmpty>
           </template>
         </ElTable>
       </div>
@@ -568,3 +578,35 @@ onMounted(loadAll);
     </ElDialog>
   </div>
 </template>
+
+<style scoped>
+.master-data-filter-panel {
+  align-items: stretch;
+}
+
+.master-data-filter-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.master-data-filter-actions :deep(.el-button) {
+  min-width: 72px;
+}
+
+.master-data-empty-action {
+  margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .master-data-filter-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .master-data-filter-actions :deep(.el-button) {
+    flex: 1;
+  }
+}
+</style>

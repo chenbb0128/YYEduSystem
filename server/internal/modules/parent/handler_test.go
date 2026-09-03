@@ -528,6 +528,62 @@ func TestUnmatchedClassTextDoesNotBlockApproval(t *testing.T) {
 	}
 }
 
+func TestAdminCanApproveMinimalChildApplicationByCreatingFallbackClass(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	master := masterdata.NewMemoryStore()
+	parents := NewMemoryStore()
+	parentAccount, err := parents.CreateAccount(ctx, masterdata.DefaultOrganizationID, CreateAccountParams{OpenID: "parent-minimal-application", Nickname: "家长"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(parents, master, pickup.NewMemoryStore())
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	created := parentRequest(t, router, http.MethodPost, "/api/v1/parent/child-applications", `{"student_name":"小星","grade":"一年级","guardian_phone":"15888231457","notes":"家长只填写年级，学校和班级由老师确认"}`, parentAccount.OpenID)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create minimal application status = %d: %s", created.Code, created.Body.String())
+	}
+	var application childApplicationView
+	decodeParentData(t, created, &application)
+	if application.SchoolID != nil || application.SchoolClassID != nil {
+		t.Fatalf("minimal application should stay unresolved before review = %+v", application)
+	}
+
+	admin := identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: 1, Role: identity.UserRoleAdmin}
+	review := parentRequestAs(t, router, admin, http.MethodPost, fmt.Sprintf("/api/v1/child-applications/%d/review", application.ID), `{"status":"approved","create_school_class":true}`)
+	if review.Code != http.StatusOK {
+		t.Fatalf("approve minimal application status = %d: %s", review.Code, review.Body.String())
+	}
+	decodeParentData(t, review, &application)
+	if application.Status != ChildApplicationStatusApproved || application.StudentID == nil || application.SchoolID == nil || application.SchoolClassID == nil {
+		t.Fatalf("approved minimal application = %+v", application)
+	}
+
+	schools, err := master.ListSchools(ctx, masterdata.DefaultOrganizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schools) != 1 || schools[0].Name != "待确认学校" {
+		t.Fatalf("fallback school = %+v", schools)
+	}
+	classes, err := master.ListSchoolClasses(ctx, masterdata.DefaultOrganizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classes) != 1 || classes[0].Grade != "一年级" || classes[0].Name != "待确认班级" {
+		t.Fatalf("fallback class = %+v", classes)
+	}
+	students, err := master.ListStudents(ctx, masterdata.DefaultOrganizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(students) != 1 || students[0].Name != "小星" || students[0].GuardianPhone != "15888231457" {
+		t.Fatalf("created student = %+v", students)
+	}
+}
+
 func TestSameNameApplicationReturnsCandidatesAndRequiresSelection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.Background()

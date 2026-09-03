@@ -67,7 +67,7 @@ func (s *MemoryStore) CreateOperation(_ context.Context, orgID uint64, params Cr
 		return Operation{}, fmt.Errorf("%w: roster is empty", ErrInvalidState)
 	}
 	now := time.Now().UTC()
-	operation := Operation{ID: s.newID(), OrganizationID: orgID, OperationDate: params.OperationDate, PickupMode: params.PickupMode, SchoolID: params.SchoolID, SchoolClassID: params.SchoolClassID, CareClassID: cloneID(params.CareClassID), TeacherUserID: cloneID(params.TeacherUserID), TeacherName: strings.TrimSpace(params.TeacherName), Status: OperationStatusDraft, Notes: strings.TrimSpace(params.Notes), CreatedAt: now, UpdatedAt: now}
+	operation := Operation{ID: s.newID(), OrganizationID: orgID, OperationDate: params.OperationDate, PickupMode: params.PickupMode, SchoolID: params.SchoolID, SchoolClassID: params.SchoolClassID, CareClassID: cloneID(params.CareClassID), TeacherUserID: cloneID(params.TeacherUserID), TeacherName: strings.TrimSpace(params.TeacherName), ExpectedPickupTime: strings.TrimSpace(params.ExpectedPickupTime), Status: OperationStatusDraft, Notes: strings.TrimSpace(params.Notes), CreatedAt: now, UpdatedAt: now}
 	s.operations = append(s.operations, operation)
 	seen := make(map[uint64]struct{}, len(roster))
 	for _, student := range roster {

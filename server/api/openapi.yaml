@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: tuoguan-system API
+  title: 豆芽成长助手 API
   version: 0.1.0
   description: |
     托管班系统 API 契约。当前已接入基础档案中心、身份权限、接送、请假、作业和家长端闭环。
@@ -23,7 +23,7 @@ tags:
   - name: Staffing
     description: 教师账号与负责学校班级的分配
   - name: Pickup
-    description: 每日接送、点名、接送事件、通知和照片上传
+    description: 豆芽成长助手的接送、作业、餐食、每日总结、通知和家长服务 API
   - name: Homework
     description: 按学校班级布置作业、学生逐项批改和家长查看结果
   - name: Meal
@@ -32,6 +32,8 @@ tags:
     description: 教师每日总结生成、发布和结束当天托管
   - name: Parent
     description: 家长绑定、请假申请和家长侧动态查询
+  - name: Platform
+    description: 平台拥有者对托管机构、邀请码和平台管理员的生命周期管理
 
 paths:
   /api/v1/auth/login:
@@ -59,6 +61,170 @@ paths:
               schema: { $ref: '#/components/schemas/AuthTokenResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
 
+  /api/v1/platform/overview:
+    get:
+      tags: [Platform]
+      summary: 平台概览统计
+      operationId: getPlatformOverview
+      responses:
+        '200':
+          description: 机构、注册申请和邀请码统计
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          organizationCount: { type: integer }
+                          activeOrganizationCount: { type: integer }
+                          disabledOrganizationCount: { type: integer }
+                          pendingRegistrationCount: { type: integer }
+                          availableInviteCount: { type: integer }
+                          exhaustedInviteCount: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/organizations:
+    get:
+      tags: [Platform]
+      summary: 查询托管机构
+      operationId: listPlatformOrganizations
+      parameters:
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, active, disabled] } }
+      responses:
+        '200': { description: 机构列表, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/organizations/{id}/status:
+    post:
+      tags: [Platform]
+      summary: 启用或停用托管机构
+      operationId: setPlatformOrganizationStatus
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [pending, active, disabled] }
+              additionalProperties: false
+      responses:
+        '200': { description: 状态已更新, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/organizations/{id}/authorization:
+    put:
+      tags: [Platform]
+      summary: 设置机构服务期限
+      operationId: setPlatformOrganizationAuthorization
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authorizedUntil]
+              properties:
+                authorizedUntil: { type: string, format: date, description: 留空表示清除期限 }
+              additionalProperties: false
+      responses:
+        '200': { description: 服务期限已更新, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/admins:
+    get:
+      tags: [Platform]
+      summary: 查询平台管理员
+      operationId: listPlatformAdmins
+      parameters:
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, disabled] } }
+      responses:
+        '200': { description: 平台管理员列表, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Platform]
+      summary: 新增平台管理员
+      operationId: createPlatformAdmin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, realName]
+              properties:
+                username: { type: string, minLength: 3, maxLength: 64 }
+                password: { type: string, minLength: 6 }
+                realName: { type: string }
+                status: { type: string, enum: [active, disabled], default: active }
+              additionalProperties: false
+      responses:
+        '201': { description: 创建成功, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/admins/{id}:
+    put:
+      tags: [Platform]
+      summary: 修改平台管理员
+      operationId: updatePlatformAdmin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [realName, status]
+              properties:
+                password: { type: string, minLength: 6 }
+                realName: { type: string }
+                status: { type: string, enum: [active, disabled] }
+              additionalProperties: false
+      responses:
+        '200': { description: 修改成功, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/platform/admins/{id}/status:
+    post:
+      tags: [Platform]
+      summary: 启用或停用平台管理员
+      operationId: setPlatformAdminStatus
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, disabled] }
+              additionalProperties: false
+      responses:
+        '200': { description: 状态已更新, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/v1/auth/parent/wechat:
     post:
       tags: [Auth]
@@ -85,6 +251,59 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokenResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/auth/phone-code:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 发送手机号登录验证码
+      description: 本地开发环境返回 debug_code 便于测试；生产环境只通过已配置的短信服务发送，不返回验证码明文。
+      operationId: requestPhoneCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, minLength: 7, maxLength: 32 }
+              additionalProperties: false
+      responses:
+        '200':
+          description: 验证码发送成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PhoneCodeResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { description: 请求过于频繁, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '503': { description: 短信服务暂不可用, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /api/v1/auth/phone-login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 手机号验证码登录
+      operationId: loginWithPhoneCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string, minLength: 7, maxLength: 32 }
+                code: { type: string, minLength: 4, maxLength: 8 }
+              additionalProperties: false
+      responses:
+        '200':
+          description: 验证成功，返回可选择的家长或教职工入口
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PhoneLoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '503': { description: 验证服务暂不可用, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
 
   /api/v1/auth/refresh:
     post:
@@ -754,6 +973,94 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /api/v1/pickup-schedules:
+    get:
+      tags: [Pickup]
+      summary: 查询周期接送排班
+      description: 教师只能看到自己负责班级的排班；管理角色可以查看全机构排班。
+      operationId: listPickupSchedules
+      parameters:
+        - in: query
+          name: date
+          description: 传入日期时只返回该日期生效的规则。
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: 周期排班列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickupScheduleListResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Pickup]
+      summary: 创建周期接送排班
+      description: 创建周一至周日的重复规则。规则只会自动生成待教师确认的当天任务，不会直接跳过确认通知家长。
+      operationId: createPickupSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupScheduleRequest' }
+      responses:
+        '201':
+          description: 排班创建成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupScheduleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/pickup-schedules/generate:
+    post:
+      tags: [Pickup]
+      summary: 按周期排班生成当天接送任务
+      description: 生成当天符合规则的 draft 任务；已有任务、无在托学生或停用班级会跳过。
+      operationId: generatePickupScheduleOperations
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { date: { type: string, format: date } }
+              additionalProperties: false
+      responses:
+        '200':
+          description: 生成结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupScheduleGenerationResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/pickup-schedules/{id}:
+    put:
+      tags: [Pickup]
+      summary: 更新周期接送排班
+      operationId: updatePickupSchedule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupScheduleRequest' }
+      responses:
+        '200':
+          description: 排班更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupScheduleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/pickup-workbench:
     get:
@@ -2436,6 +2743,51 @@ components:
                 role: { type: string }
               additionalProperties: false
 
+    PhoneCodeResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [phone, masked_phone, expires_in, retry_after]
+              properties:
+                phone: { type: string }
+                masked_phone: { type: string }
+                expires_in: { type: integer, minimum: 1 }
+                retry_after: { type: integer, minimum: 1 }
+                debug_code: { type: string, description: 仅本地开发环境返回 }
+              additionalProperties: false
+
+    PhoneLoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [phone, masked_phone, roles]
+              properties:
+                phone: { type: string }
+                masked_phone: { type: string }
+                roles:
+                  type: array
+                  items:
+                    type: object
+                    required: [key, principal, role, label, available]
+                    properties:
+                      key: { type: string, enum: [parent, staff] }
+                      principal: { type: string, enum: [parent, user] }
+                      role: { type: string }
+                      label: { type: string }
+                      available: { type: boolean }
+                      message: { type: string }
+                      accessToken: { type: string }
+                      refreshToken: { type: string }
+                      expiresIn: { type: integer, format: int64 }
+                    additionalProperties: false
+              additionalProperties: false
+
     AuthMeResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
@@ -3263,6 +3615,83 @@ components:
       type: string
       enum: [planned, picked_up, self_arrived, parent_picked_up, leave, absent, arrived, not_arrived, left, midway_left, abnormal]
 
+    PickupSchedule:
+      type: object
+      required: [id, school_id, school_class_id, weekday, weekday_label, pickup_mode, teacher_name, expected_pickup_time, effective_from, enabled, notes, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        school_id: { type: integer, format: int64 }
+        school_class_id: { type: integer, format: int64 }
+        care_class_id: { type: integer, format: int64, nullable: true }
+        weekday: { type: integer, minimum: 1, maximum: 7 }
+        weekday_label: { type: string }
+        pickup_mode: { type: string, enum: [school_pickup, self_arrival] }
+        teacher_user_id: { type: integer, format: int64, nullable: true }
+        teacher_name: { type: string, maxLength: 64 }
+        expected_pickup_time: { type: string, maxLength: 16 }
+        effective_from: { type: string, format: date }
+        effective_to: { type: string, format: date, nullable: true }
+        enabled: { type: boolean }
+        notes: { type: string, maxLength: 500 }
+        school_name: { type: string }
+        grade: { type: string }
+        class_name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    PickupScheduleRequest:
+      type: object
+      required: [school_id, school_class_id, weekday, effective_from]
+      properties:
+        school_id: { type: integer, format: int64, minimum: 1 }
+        school_class_id: { type: integer, format: int64, minimum: 1 }
+        care_class_id: { type: integer, format: int64, minimum: 1 }
+        weekday: { type: integer, minimum: 1, maximum: 7 }
+        pickup_mode: { type: string, enum: [school_pickup, self_arrival], default: school_pickup }
+        teacher_user_id: { type: integer, format: int64, minimum: 1 }
+        teacher_name: { type: string, maxLength: 64 }
+        expected_pickup_time: { type: string, maxLength: 16 }
+        effective_from: { type: string, format: date }
+        effective_to: { type: string, format: date }
+        enabled: { type: boolean, default: true }
+        notes: { type: string, maxLength: 500 }
+      additionalProperties: false
+
+    PickupScheduleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, total]
+              properties:
+                items: { type: array, items: { $ref: '#/components/schemas/PickupSchedule' } }
+                total: { type: integer }
+              additionalProperties: false
+
+    PickupScheduleResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties: { data: { $ref: '#/components/schemas/PickupSchedule' } }
+
+    PickupScheduleGenerationResult:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [date, created_operation_ids, skipped_schedule_ids, skipped_reasons]
+              properties:
+                date: { type: string, format: date-time }
+                created_operation_ids: { type: array, items: { type: integer, format: int64 } }
+                skipped_schedule_ids: { type: array, items: { type: integer, format: int64 } }
+                skipped_reasons: { type: object, additionalProperties: { type: string } }
+              additionalProperties: false
+
     PickupOperation:
       type: object
       required: [id, operation_date, pickup_mode, school_id, school_class_id, teacher_name, status, notes, created_at, updated_at]
@@ -3299,6 +3728,7 @@ components:
         care_class_id: { type: integer, format: int64, minimum: 1, nullable: true }
         teacher_user_id: { type: integer, format: int64, minimum: 1, nullable: true }
         teacher_name: { type: string, maxLength: 64 }
+        expected_pickup_time: { type: string, maxLength: 16 }
         student_ids:
           type: array
           description: 指定当天实际需要接送的学生；为空时自动纳入该学校班级的全部在托学生。

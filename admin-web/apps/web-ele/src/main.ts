@@ -1,4 +1,4 @@
-import { initPreferences } from '@vben/preferences';
+import { initPreferences, preferencesManager } from '@vben/preferences';
 import { unmountGlobalLoading } from '@vben/utils';
 
 import { appConfig } from '#/config/app';
@@ -19,6 +19,12 @@ async function initApplication() {
   await initPreferences({
     namespace,
     overrides: overridesPreferences,
+  });
+  // 产品品牌不是用户偏好项。强制写回产品名，避免旧版本缓存的
+  // “托管班管理系统”覆盖当前的“豆芽成长助手”。
+  preferencesManager.updatePreferences({
+    app: { name: appConfig.name },
+    copyright: { companyName: appConfig.name },
   });
 
   // 启动应用并挂载

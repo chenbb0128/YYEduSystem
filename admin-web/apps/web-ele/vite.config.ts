@@ -1,8 +1,15 @@
+import { cwd } from 'node:process';
+
 import { defineConfig, viteCssLayerPlugin } from '@vben/vite-config';
 
 import ElementPlus from 'unplugin-element-plus/vite';
+import { loadEnv } from 'vite';
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ mode }) => {
+  const env = loadEnv(mode, cwd(), '');
+  const tuoguanApiTarget =
+    env.VITE_TUOGUAN_PROXY_TARGET || 'http://localhost:8081';
+
   return {
     application: {
       license: false,
@@ -26,7 +33,7 @@ export default defineConfig(async () => {
           '/tuoguan-api': {
             changeOrigin: true,
             rewrite: (path) => path.replace(/^\/tuoguan-api/, ''),
-            target: 'http://localhost:8081',
+            target: tuoguanApiTarget,
           },
         },
       },

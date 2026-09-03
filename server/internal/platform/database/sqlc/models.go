@@ -219,12 +219,47 @@ type NotificationDeliveryLog struct {
 }
 
 type Organization struct {
-	ID        uint64    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              uint64       `json:"id"`
+	Name            string       `json:"name"`
+	Slug            string       `json:"slug"`
+	Status          string       `json:"status"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	ContactName     string       `json:"contact_name"`
+	ContactPhone    string       `json:"contact_phone"`
+	AuthorizedUntil sql.NullTime `json:"authorized_until"`
+}
+
+type OrganizationInvite struct {
+	ID              uint64       `json:"id"`
+	CodeHash        string       `json:"code_hash"`
+	CodeHint        string       `json:"code_hint"`
+	MaxUses         uint32       `json:"max_uses"`
+	UsedCount       uint32       `json:"used_count"`
+	ExpiresAt       sql.NullTime `json:"expires_at"`
+	Status          string       `json:"status"`
+	Note            string       `json:"note"`
+	CreatedByUserID uint64       `json:"created_by_user_id"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+}
+
+type OrganizationRegistration struct {
+	ID                uint64        `json:"id"`
+	InviteID          uint64        `json:"invite_id"`
+	OrganizationID    sql.NullInt64 `json:"organization_id"`
+	OrganizationName  string        `json:"organization_name"`
+	Slug              string        `json:"slug"`
+	ContactName       string        `json:"contact_name"`
+	ContactPhone      string        `json:"contact_phone"`
+	AdminUsername     string        `json:"admin_username"`
+	AdminPasswordHash string        `json:"admin_password_hash"`
+	Status            string        `json:"status"`
+	ReviewNote        string        `json:"review_note"`
+	ReviewedByUserID  sql.NullInt64 `json:"reviewed_by_user_id"`
+	ReviewedAt        sql.NullTime  `json:"reviewed_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 type OutboxEvent struct {
@@ -399,6 +434,25 @@ type PickupOperationStudent struct {
 	PickupMode     string       `json:"pickup_mode"`
 }
 
+type PickupSchedule struct {
+	ID                 uint64        `json:"id"`
+	OrganizationID     uint64        `json:"organization_id"`
+	SchoolID           uint64        `json:"school_id"`
+	SchoolClassID      uint64        `json:"school_class_id"`
+	CareClassID        sql.NullInt64 `json:"care_class_id"`
+	Weekday            uint8         `json:"weekday"`
+	PickupMode         string        `json:"pickup_mode"`
+	TeacherUserID      sql.NullInt64 `json:"teacher_user_id"`
+	TeacherName        string        `json:"teacher_name"`
+	ExpectedPickupTime string        `json:"expected_pickup_time"`
+	EffectiveFrom      time.Time     `json:"effective_from"`
+	EffectiveTo        sql.NullTime  `json:"effective_to"`
+	Enabled            bool          `json:"enabled"`
+	Notes              string        `json:"notes"`
+	CreatedAt          time.Time     `json:"created_at"`
+	UpdatedAt          time.Time     `json:"updated_at"`
+}
+
 type School struct {
 	ID             uint64    `json:"id"`
 	OrganizationID uint64    `json:"organization_id"`
@@ -464,13 +518,14 @@ type TeacherClassAssignment struct {
 }
 
 type User struct {
-	ID           uint64    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	Nickname     string    `json:"nickname"`
-	Avatar       string    `json:"avatar"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	Role         string    `json:"role"`
+	ID             uint64    `json:"id"`
+	Username       string    `json:"username"`
+	PasswordHash   string    `json:"password_hash"`
+	Nickname       string    `json:"nickname"`
+	Avatar         string    `json:"avatar"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Role           string    `json:"role"`
+	OrganizationID uint64    `json:"organization_id"`
 }

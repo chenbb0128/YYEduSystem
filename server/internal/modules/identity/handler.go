@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -157,7 +156,11 @@ func (h *Handler) login(c *gin.Context) {
 		response.Error(c, response.BadRequest("账号已停用", ErrUserDisabled))
 		return
 	}
-	pair, err := h.tokens.IssuePair(Principal{Kind: PrincipalKindUser, SubjectID: user.ID, OrganizationID: masterdata.DefaultOrganizationID, Role: user.Role})
+	if !IsPlatformAdmin(user.Role) && user.OrganizationStatus != "" && user.OrganizationStatus != "active" {
+		response.Error(c, response.BadRequest("所属机构暂不可用", ErrUserDisabled))
+		return
+	}
+	pair, err := h.tokens.IssuePair(Principal{Kind: PrincipalKindUser, SubjectID: user.ID, OrganizationID: user.OrganizationID, Role: user.Role})
 	if err != nil {
 		response.Error(c, response.Internal(err))
 		return
@@ -189,11 +192,12 @@ func (h *Handler) refresh(c *gin.Context) {
 	}
 	if principal.Kind == PrincipalKindUser {
 		user, findErr := h.users.FindUserByID(c.Request.Context(), principal.SubjectID)
-		if findErr != nil || user.Status != UserStatusActive {
+		if findErr != nil || user.Status != UserStatusActive || (!IsPlatformAdmin(user.Role) && user.OrganizationStatus != "" && user.OrganizationStatus != "active") {
 			response.Error(c, response.Unauthorized())
 			return
 		}
 		principal.Role = user.Role
+		principal.OrganizationID = user.OrganizationID
 	} else if principal.Kind != PrincipalKindParent {
 		response.Error(c, response.Unauthorized())
 		return
@@ -235,14 +239,16 @@ func (h *Handler) codes(c *gin.Context) {
 		return
 	}
 	switch principal.Role {
+	case UserRolePlatformAdmin:
+		response.OK(c, []string{"platform:dashboard", "platform:organizations:view", "platform:organizations:write", "platform:invites:view", "platform:invites:write", "platform:registrations:review"})
 	case UserRoleAdmin:
-		response.OK(c, []string{"dashboard:view", "master-data:view", "master-data:write", "pickup:view", "pickup:write", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "assignment:view", "assignment:write", "notification:view", "notification:retry", "system:user:create", "system:user:update", "system:user:delete"})
+		response.OK(c, []string{"dashboard:view", "master-data:view", "master-data:write", "pickup:view", "pickup:write", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "child-applications:view", "assignment:view", "assignment:write", "notification:view", "notification:retry", "system:user:create", "system:user:update", "system:user:delete"})
 	case UserRoleEditor:
-		response.OK(c, []string{"dashboard:view", "master-data:view", "master-data:write", "pickup:view", "pickup:write", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "assignment:view", "assignment:write", "notification:view", "notification:retry"})
+		response.OK(c, []string{"dashboard:view", "master-data:view", "master-data:write", "pickup:view", "pickup:write", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "child-applications:view", "assignment:view", "assignment:write", "notification:view", "notification:retry"})
 	case UserRoleViewer:
 		response.OK(c, []string{"dashboard:view", "master-data:view", "pickup:view", "homework:view", "meal:view", "summary:view", "assignment:view"})
 	default:
-		response.OK(c, []string{"dashboard:view", "master-data:view", "pickup:view", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "assignment:view"})
+		response.OK(c, []string{"dashboard:view", "master-data:view", "pickup:view", "homework:view", "homework:write", "meal:view", "meal:write", "summary:view", "summary:write", "leave:review", "child-applications:view", "assignment:view"})
 	}
 }
 
@@ -257,10 +263,20 @@ func (h *Handler) listUsers(c *gin.Context) {
 		response.Error(c, response.Internal(err))
 		return
 	}
+	principal, _ := h.staffPrincipal(c)
 	keyword := strings.ToLower(strings.TrimSpace(c.Query("keyword")))
 	status := strings.TrimSpace(c.Query("status"))
 	out := make([]userView, 0, len(users))
 	for _, user := range users {
+		// Platform administrators belong to the platform owner, not to an
+		// institution's staff directory. Never expose or mutate them through
+		// the organization user-management endpoints.
+		if IsPlatformAdmin(user.Role) {
+			continue
+		}
+		if user.OrganizationID != 0 && user.OrganizationID != principal.OrganizationID {
+			continue
+		}
 		if keyword != "" && !strings.Contains(strings.ToLower(user.Username), keyword) && !strings.Contains(strings.ToLower(user.Nickname), keyword) {
 			continue
 		}
@@ -281,6 +297,10 @@ func (h *Handler) createUser(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+	if IsPlatformAdmin(UserRole(strings.TrimSpace(req.Role))) {
+		response.Error(c, response.Forbidden())
+		return
+	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		response.Error(c, response.Internal(err))
@@ -294,7 +314,8 @@ func (h *Handler) createUser(c *gin.Context) {
 	if status == "" {
 		status = UserStatusActive
 	}
-	user, err := h.users.CreateUser(c.Request.Context(), CreateUserParams{Username: strings.TrimSpace(req.Username), PasswordHash: string(passwordHash), Role: UserRole(strings.TrimSpace(req.Role)), Nickname: nickname, Status: status})
+	principal, _ := h.staffPrincipal(c)
+	user, err := h.users.CreateUser(c.Request.Context(), CreateUserParams{OrganizationID: principal.OrganizationID, Username: strings.TrimSpace(req.Username), PasswordHash: string(passwordHash), Role: UserRole(strings.TrimSpace(req.Role)), Nickname: nickname, Status: status})
 	if err != nil {
 		respondUserError(c, err)
 		return
@@ -316,9 +337,18 @@ func (h *Handler) updateUser(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+	principal, _ := h.staffPrincipal(c)
 	current, err := h.users.FindUserByID(c.Request.Context(), id)
 	if err != nil {
 		respondUserError(c, err)
+		return
+	}
+	if current.OrganizationID != 0 && current.OrganizationID != principal.OrganizationID {
+		response.Error(c, response.NotFound())
+		return
+	}
+	if IsPlatformAdmin(current.Role) || IsPlatformAdmin(UserRole(strings.TrimSpace(req.Role))) {
+		response.Error(c, response.Forbidden())
 		return
 	}
 	passwordHash := current.PasswordHash
@@ -358,7 +388,17 @@ func (h *Handler) disableUser(c *gin.Context) {
 		response.Error(c, response.BadRequest("用户 ID 不合法", err))
 		return
 	}
-	if id == 1 {
+	principal, _ := h.staffPrincipal(c)
+	current, findErr := h.users.FindUserByID(c.Request.Context(), id)
+	if findErr != nil || (current.OrganizationID != 0 && current.OrganizationID != principal.OrganizationID) {
+		response.Error(c, response.NotFound())
+		return
+	}
+	if IsPlatformAdmin(current.Role) {
+		response.Error(c, response.Forbidden())
+		return
+	}
+	if current.Username == "admin" && principal.OrganizationID == 1 {
 		response.Error(c, response.BadRequest("不能停用初始管理员", nil))
 		return
 	}
@@ -391,6 +431,9 @@ func validRole(role UserRole) bool {
 }
 
 func homePath(role UserRole) string {
+	if role == UserRolePlatformAdmin {
+		return "/platform"
+	}
 	if role == UserRoleTeacher {
 		return "/dashboard"
 	}

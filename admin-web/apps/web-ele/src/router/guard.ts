@@ -97,7 +97,9 @@ function setupAccessGuard(router: Router) {
 
     // 生成菜单和路由
     const { accessibleMenus, accessibleRoutes } = await generateAccess({
-      roles: userRoles,
+      // 本项目的路由 authority 使用后端返回的权限码（例如
+      // `platform:dashboard`），同时保留角色标识，兼容无权限码的旧路由。
+      roles: [...userRoles, ...accessStore.accessCodes],
       router,
       // 则会在菜单中显示，但是访问会被重定向到403
       routes: accessRoutes,

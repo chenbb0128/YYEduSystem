@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG GO_VERSION=1.24.3
 
 FROM golang:${GO_VERSION}-bookworm AS build

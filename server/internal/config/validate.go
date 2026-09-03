@@ -67,6 +67,9 @@ func (c Config) Validate() error {
 	if err := c.WeChat.Validate(); err != nil {
 		return err
 	}
+	if err := c.SMS.Validate(env); err != nil {
+		return err
+	}
 	if err := c.Storage.Validate(env); err != nil {
 		return err
 	}
@@ -89,6 +92,28 @@ func (c Config) Validate() error {
 		if strings.EqualFold(strings.TrimSpace(c.Storage.Provider), "local") || strings.TrimSpace(c.Storage.Provider) == "" {
 			return fmt.Errorf("config storage.provider must be s3 in production")
 		}
+		if strings.TrimSpace(c.Storage.URLSigningSecret) == "" || strings.TrimSpace(c.Storage.URLSigningSecret) == strings.TrimSpace(c.Auth.Secret) || isPlaceholder(c.Storage.URLSigningSecret) {
+			return fmt.Errorf("config storage.url_signing_secret must be an independent secret in production")
+		}
+		if isPlaceholder(c.Auth.Secret) {
+			return fmt.Errorf("config auth.secret must not contain a deployment placeholder in production")
+		}
+		if isPlaceholder(c.Database.DSN) {
+			return fmt.Errorf("config database.dsn must not contain a deployment placeholder in production")
+		}
+		if c.Storage.SignedURLTTL <= 0 {
+			return fmt.Errorf("config storage.signed_url_ttl must be positive in production")
+		}
+		if c.WeChat.Enabled {
+			if isPlaceholder(c.WeChat.AppID) || isPlaceholder(c.WeChat.Secret) {
+				return fmt.Errorf("config wechat.app_id and wechat.app_secret must be real values in production")
+			}
+			for _, kind := range []string{"pickup", "meal", "homework", "leave", "summary"} {
+				if strings.TrimSpace(c.WeChat.TemplateForKind(kind)) == "" || isPlaceholder(c.WeChat.TemplateForKind(kind)) {
+					return fmt.Errorf("config wechat.subscribe_templates.%s is required in production", kind)
+				}
+			}
+		}
 	}
 
 	switch strings.ToLower(strings.TrimSpace(c.Log.Level)) {
@@ -97,6 +122,61 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config log.level must be one of debug, info, warn, error")
 	}
 
+	return nil
+}
+
+func (c SMSConfig) Validate(env string) error {
+	provider := strings.ToLower(strings.TrimSpace(c.Provider))
+	if provider == "" {
+		provider = "local"
+	}
+	switch provider {
+	case "local", "tencent":
+	default:
+		return fmt.Errorf("config sms.provider must be local or tencent")
+	}
+	if !c.Enabled {
+		return nil
+	}
+	if c.CodeLength < 4 || c.CodeLength > 8 {
+		return fmt.Errorf("config sms.code_length must be between 4 and 8")
+	}
+	if err := positiveDuration("sms.timeout", c.Timeout); err != nil {
+		return err
+	}
+	if err := positiveDuration("sms.code_ttl", c.CodeTTL); err != nil {
+		return err
+	}
+	if err := positiveDuration("sms.resend_interval", c.ResendInterval); err != nil {
+		return err
+	}
+	if c.MaxVerifyAttempts <= 0 {
+		return fmt.Errorf("config sms.max_verify_attempts must be positive")
+	}
+	if provider == "tencent" {
+		for field, value := range map[string]string{
+			"sms.secret_id":   c.SecretID,
+			"sms.secret_key":  c.SecretKey,
+			"sms.sdk_app_id":  c.SDKAppID,
+			"sms.sign_name":   c.SignName,
+			"sms.template_id": c.TemplateID,
+			"sms.region":      c.Region,
+			"sms.endpoint":    c.Endpoint,
+		} {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("config %s is required when sms.provider is tencent", field)
+			}
+		}
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(c.Endpoint)), "https://") {
+			return fmt.Errorf("config sms.endpoint must use https")
+		}
+	}
+	if (env == "prod" || env == "production") && provider == "local" {
+		return fmt.Errorf("config sms.provider local is not allowed in production")
+	}
+	if (env == "prod" || env == "production") && strings.TrimSpace(c.CodeSecret) == "" {
+		return fmt.Errorf("config sms.code_secret is required in production when sms is enabled")
+	}
 	return nil
 }
 
@@ -138,6 +218,11 @@ func (c StorageConfig) Validate(env string) error {
 	if c.RetentionDays < 0 {
 		return fmt.Errorf("config storage.retention_days must not be negative")
 	}
+	if env == "prod" || env == "production" {
+		if isPlaceholder(c.Endpoint) || isPlaceholder(c.Bucket) || isPlaceholder(c.AccessKey) || isPlaceholder(c.SecretKey) {
+			return fmt.Errorf("config storage endpoint, bucket and credentials must be real values in production")
+		}
+	}
 	return nil
 }
 
@@ -151,6 +236,17 @@ func (c AuthConfig) Validate(env string) error {
 		}
 		if len(c.BootstrapAdminPassword) < 6 {
 			return fmt.Errorf("config auth.bootstrap_admin_password must contain at least 6 characters")
+		}
+	}
+	if c.BootstrapPlatformAdminEnabled {
+		if env == "prod" || env == "production" {
+			return fmt.Errorf("config auth.bootstrap_platform_admin_enabled must be false in production")
+		}
+		if len(strings.TrimSpace(c.BootstrapPlatformAdminUsername)) < 3 {
+			return fmt.Errorf("config auth.bootstrap_platform_admin_username must contain at least 3 characters")
+		}
+		if len(c.BootstrapPlatformAdminPassword) < 6 {
+			return fmt.Errorf("config auth.bootstrap_platform_admin_password must contain at least 6 characters")
 		}
 	}
 	if env == "prod" || env == "production" {
@@ -294,6 +390,11 @@ func (c WorkerConfig) Validate(redis RedisConfig) error {
 	if err := positiveDuration("worker.shutdown_timeout", c.ShutdownTimeout); err != nil {
 		return err
 	}
+	if c.ScheduleGenerationInterval != 0 {
+		if err := positiveDuration("worker.schedule_generation_interval", c.ScheduleGenerationInterval); err != nil {
+			return err
+		}
+	}
 	if len(c.Queues) == 0 {
 		return fmt.Errorf("config worker.queues must not be empty when worker.enabled is true")
 	}
@@ -358,6 +459,11 @@ func positiveDuration(name string, value time.Duration) error {
 		return fmt.Errorf("config %s must be positive", name)
 	}
 	return nil
+}
+
+func isPlaceholder(value string) bool {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	return strings.Contains(value, "REPLACE_WITH") || strings.Contains(value, "CHANGE_ME") || strings.Contains(value, "EXAMPLE.COM")
 }
 
 func validateProxy(value string) error {

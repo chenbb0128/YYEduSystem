@@ -5,11 +5,18 @@
     "pages/pickup/index",
     "pages/child-applications/index",
     "pages/parent/index",
+    "pages/parent-apply/index",
     "pages/homework/index",
     "pages/meals/index",
     "pages/summary/index"
   ],
-  "window": {},
+  "window": {
+    "navigationBarBackgroundColor": "#FFF7E6",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#FFF7E6",
+    "backgroundColorTop": "#FFF7E6",
+    "backgroundColorBottom": "#FFF7E6"
+  },
   "componentFramework": "glass-easel",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"

@@ -28,7 +28,7 @@ func Authenticate(tokens *identity.TokenManager, userStores ...identity.UserStor
 		}
 		if principal.Kind == identity.PrincipalKindUser && len(userStores) > 0 && userStores[0] != nil {
 			user, findErr := userStores[0].FindUserByID(c.Request.Context(), principal.SubjectID)
-			if findErr != nil || user.Status != identity.UserStatusActive {
+			if findErr != nil || user.Status != identity.UserStatusActive || (!identity.IsPlatformAdmin(user.Role) && user.OrganizationStatus != "" && user.OrganizationStatus != "active") {
 				response.Error(c, response.Unauthorized())
 				return
 			}
@@ -47,6 +47,10 @@ func RequireStaff() gin.HandlerFunc {
 			response.Error(c, response.Unauthorized())
 			return
 		}
+		if identity.IsPlatformAdmin(principal.Role) {
+			response.Error(c, response.Forbidden())
+			return
+		}
 		c.Next()
 	}
 }
@@ -58,7 +62,26 @@ func RequireManager() gin.HandlerFunc {
 			response.Error(c, response.Unauthorized())
 			return
 		}
+		if identity.IsPlatformAdmin(principal.Role) {
+			response.Error(c, response.Forbidden())
+			return
+		}
 		if principal.Role != identity.UserRoleAdmin && principal.Role != identity.UserRoleEditor {
+			response.Error(c, response.Forbidden())
+			return
+		}
+		c.Next()
+	}
+}
+
+func RequirePlatformAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal, ok := identity.PrincipalFromContext(c.Request.Context())
+		if !ok || principal.Kind != identity.PrincipalKindUser {
+			response.Error(c, response.Unauthorized())
+			return
+		}
+		if !identity.IsPlatformAdmin(principal.Role) {
 			response.Error(c, response.Forbidden())
 			return
 		}

@@ -4,10 +4,22 @@ import { $t } from '#/locales';
 
 const routes: RouteRecordRaw[] = [
   {
+    name: 'PlatformManagement',
+    path: '/platform',
+    component: () => import('#/views/platform/index.vue'),
+    meta: {
+      authority: ['platform:dashboard'],
+      icon: 'lucide:building-2',
+      order: -2,
+      title: '平台总管理',
+    },
+  },
+  {
     name: 'PickupOperations',
     path: '/pickup-operations',
     component: () => import('#/views/pickup/index.vue'),
     meta: {
+      authority: ['pickup:view'],
       icon: 'lucide:clipboard-check',
       order: 4,
       title: '今日接送',
@@ -18,6 +30,7 @@ const routes: RouteRecordRaw[] = [
     path: '/master-data',
     component: () => import('#/views/master-data/index.vue'),
     meta: {
+      authority: ['master-data:view'],
       icon: 'lucide:database',
       order: 5,
       title: '档案中心',
@@ -72,6 +85,7 @@ const routes: RouteRecordRaw[] = [
     path: '/child-applications',
     component: () => import('#/views/child-applications/index.vue'),
     meta: {
+      authority: ['child-applications:view'],
       icon: 'lucide:user-round-check',
       order: 8.5,
       title: '家长入班申请',
@@ -82,6 +96,7 @@ const routes: RouteRecordRaw[] = [
     path: '/leave-requests',
     component: () => import('#/views/leave-requests/index.vue'),
     meta: {
+      authority: ['leave:review'],
       icon: 'lucide:calendar-check-2',
       order: 9,
       title: '请假审核',

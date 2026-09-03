@@ -3,5 +3,8 @@
   "usingComponents": {
     "AppPage": "/components/AppPage/AppPage"
   },
-  "navigationBarTitleText": "首页"
+  "navigationStyle": "custom",
+  "navigationBarBackgroundColor": "#FFF7E6",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#FFF7E6"
 }

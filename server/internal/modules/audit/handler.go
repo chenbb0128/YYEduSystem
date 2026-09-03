@@ -52,7 +52,7 @@ func (h *Handler) list(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	items, err := h.store.List(c.Request.Context(), h.orgID, ListFilter{Action: strings.TrimSpace(c.Query("action")), ResourceType: strings.TrimSpace(c.Query("resource_type")), Limit: limit})
+	items, err := h.store.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ListFilter{Action: strings.TrimSpace(c.Query("action")), ResourceType: strings.TrimSpace(c.Query("resource_type")), Limit: limit})
 	if err != nil {
 		response.Error(c, response.Internal(err))
 		return

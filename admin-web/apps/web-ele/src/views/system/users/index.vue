@@ -247,6 +247,14 @@ onMounted(loadUsers);
       </div>
     </div>
 
+    <ElAlert
+      class="mb-4"
+      :closable="false"
+      show-icon
+      title="小程序老师端将使用手机号验证码登录；请把老师手机号登记在“登录手机号/账号”中。"
+      type="success"
+    />
+
     <ElCard class="sprout-filter-card" shadow="never">
       <div class="sprout-filter-panel">
         <ElInput
@@ -395,6 +403,7 @@ onMounted(loadUsers);
             v-model="form.username"
             :disabled="dialogMode === 'edit'"
             maxlength="32"
+            placeholder="例如：13800000000"
           />
         </ElFormItem>
         <ElFormItem :label="$t('page.users.realName')" prop="realName">

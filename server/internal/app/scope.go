@@ -21,7 +21,7 @@ func teacherMasterDataScope(assignments assignment.Store) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		items, err := assignments.List(c.Request.Context(), masterdata.DefaultOrganizationID, principal.SubjectID, 0)
+		items, err := assignments.List(c.Request.Context(), principal.OrganizationID, principal.SubjectID, 0)
 		if err != nil {
 			response.Error(c, response.Internal(err))
 			return

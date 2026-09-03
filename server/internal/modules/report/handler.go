@@ -59,14 +59,14 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 	classNames := map[uint64]string{}
 	studentClasses := map[uint64]uint64{}
 	if h.masterData != nil {
-		classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+		classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			return out, err
 		}
 		for _, item := range classes {
 			classNames[item.ID] = strings.TrimSpace(item.Grade + item.Name)
 		}
-		students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+		students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			return out, err
 		}
@@ -76,7 +76,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 	}
 	classIndex := map[uint64]int{}
 	if h.pickup != nil {
-		operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+		operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			return out, err
 		}
@@ -92,7 +92,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 				classIndex[operation.SchoolClassID] = index
 			}
 			out.Classes[index].Operations++
-			members, err := h.pickup.ListOperationStudents(c.Request.Context(), h.orgID, operation.ID)
+			members, err := h.pickup.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operation.ID)
 			if err != nil {
 				return out, err
 			}
@@ -114,7 +114,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 		}
 	}
 	if h.homework != nil {
-		tasks, err := h.homework.ListTasks(c.Request.Context(), h.orgID)
+		tasks, err := h.homework.ListTasks(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			return out, err
 		}
@@ -123,7 +123,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 				continue
 			}
 			out.Homework.Tasks++
-			members, err := h.homework.ListTaskStudents(c.Request.Context(), h.orgID, task.ID)
+			members, err := h.homework.ListTaskStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), task.ID)
 			if err != nil {
 				return out, err
 			}
@@ -143,7 +143,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 	}
 	if h.meals != nil {
 		from, to := date, date
-		plans, err := h.meals.ListPlans(c.Request.Context(), h.orgID, &from, &to)
+		plans, err := h.meals.ListPlans(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &from, &to)
 		if err != nil {
 			return out, err
 		}
@@ -151,7 +151,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 		out.MealRecorded = len(plans) > 0
 	}
 	if h.parents != nil {
-		applications, err := h.parents.ListChildApplications(c.Request.Context(), h.orgID, nil)
+		applications, err := h.parents.ListChildApplications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil)
 		if err != nil {
 			return out, err
 		}
@@ -163,7 +163,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 				out.PendingApplications++
 			}
 		}
-		leaves, err := h.parents.ListLeaveRequests(c.Request.Context(), h.orgID, nil)
+		leaves, err := h.parents.ListLeaveRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil)
 		if err != nil {
 			return out, err
 		}
@@ -174,7 +174,7 @@ func (h *Handler) build(c *gin.Context, date time.Time) (DailyOverview, error) {
 		}
 	}
 	if h.summaries != nil {
-		items, err := h.summaries.List(c.Request.Context(), h.orgID, &date)
+		items, err := h.summaries.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &date)
 		if err != nil {
 			return out, err
 		}
@@ -231,7 +231,7 @@ func (h *Handler) classAllowed(c *gin.Context, schoolClassID uint64) bool {
 	if h.assignments == nil {
 		return false
 	}
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, principal.SubjectID, schoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, schoolClassID)
 	return err == nil && item.Status == assignment.AssignmentStatusActive
 }
 
@@ -243,7 +243,7 @@ func (h *Handler) summaryAllowed(c *gin.Context, item summary.DailySummary) bool
 	if h.pickup == nil {
 		return h.assignments != nil && h.teacherHasAssignment(c, principal.SubjectID)
 	}
-	operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return false
 	}
@@ -259,7 +259,7 @@ func (h *Handler) teacherHasAssignment(c *gin.Context, teacherID uint64) bool {
 	if h.assignments == nil {
 		return false
 	}
-	items, err := h.assignments.List(c.Request.Context(), h.orgID, teacherID, 0)
+	items, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), teacherID, 0)
 	if err != nil {
 		return false
 	}

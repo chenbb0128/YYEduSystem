@@ -32,6 +32,7 @@ type Handler struct {
 	notifications      pickup.NotificationWriter
 	photos             storage.Store
 	photoSigner        *storage.URLSigner
+	photoURLTTL        time.Duration
 	assets             mediamodule.Store
 	assetRetentionDays int
 	audit              auditmodule.Writer
@@ -39,7 +40,7 @@ type Handler struct {
 }
 
 func NewHandler(store Store, masterData masterdata.Store) *Handler {
-	return &Handler{store: store, masterData: masterData, orgID: masterdata.DefaultOrganizationID}
+	return &Handler{store: store, masterData: masterData, photoURLTTL: 15 * time.Minute, orgID: masterdata.DefaultOrganizationID}
 }
 
 func (h *Handler) SetStaffScope(assignments assignment.Store, users identity.UserStore) {
@@ -61,10 +62,16 @@ func (h *Handler) SetAssetRetentionDays(days int) { h.assetRetentionDays = days 
 
 func (h *Handler) SetPhotoSigner(signer *storage.URLSigner) { h.photoSigner = signer }
 
+func (h *Handler) SetPhotoURLTTL(ttl time.Duration) {
+	if ttl > 0 {
+		h.photoURLTTL = ttl
+	}
+}
+
 func (h *Handler) SetAuditWriter(writer auditmodule.Writer) { h.audit = writer }
 
 func (h *Handler) recordAudit(c *gin.Context, action, resourceType string, resourceID uint64) {
-	auditmodule.RecordForContext(c.Request.Context(), h.audit, h.orgID, action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
+	auditmodule.RecordForContext(c.Request.Context(), h.audit, identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
 }
 
 func (h *Handler) RegisterRoutes(api *gin.RouterGroup) {
@@ -175,7 +182,7 @@ func (r reviewStudentRequest) Validate() []response.ValidationDetail {
 }
 
 func (h *Handler) listTasks(c *gin.Context) {
-	items, err := h.store.ListTasks(c.Request.Context(), h.orgID)
+	items, err := h.store.ListTasks(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondError(c, err)
 		return
@@ -239,7 +246,7 @@ func (h *Handler) createTask(c *gin.Context) {
 		return
 	}
 	homeworkDate, _ := parseDate(req.HomeworkDate)
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -259,7 +266,7 @@ func (h *Handler) createTask(c *gin.Context) {
 		respondAccessError(c, err)
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		respondMasterDataError(c, err)
 		return
@@ -289,7 +296,7 @@ func (h *Handler) createTask(c *gin.Context) {
 		respondAccessError(c, creatorErr)
 		return
 	}
-	item, err := h.store.CreateTask(c.Request.Context(), h.orgID, CreateTaskParams{HomeworkDate: homeworkDate, SchoolID: selectedClass.SchoolID, SchoolClassID: selectedClass.ID, Subject: defaultSubject(req.Subject), Content: strings.TrimSpace(req.Content), AttachmentURLs: normalizeAttachmentURLs(req.AttachmentURLs), CreatedByUserID: createdBy, CreatorName: creatorName}, roster)
+	item, err := h.store.CreateTask(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateTaskParams{HomeworkDate: homeworkDate, SchoolID: selectedClass.SchoolID, SchoolClassID: selectedClass.ID, Subject: defaultSubject(req.Subject), Content: strings.TrimSpace(req.Content), AttachmentURLs: normalizeAttachmentURLs(req.AttachmentURLs), CreatedByUserID: createdBy, CreatorName: creatorName}, roster)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -367,7 +374,7 @@ func (h *Handler) recordAsset(c *gin.Context, asset storage.Asset, resourceType 
 		value := time.Now().UTC().AddDate(0, 0, h.assetRetentionDays)
 		retentionUntil = &value
 	}
-	_, err := h.assets.Create(c.Request.Context(), h.orgID, mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
+	_, err := h.assets.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
 	return err
 }
 
@@ -388,7 +395,7 @@ func (h *Handler) listTaskStudents(c *gin.Context) {
 	if _, ok := h.taskForPrincipal(c, taskID); !ok {
 		return
 	}
-	items, err := h.store.ListTaskStudents(c.Request.Context(), h.orgID, taskID)
+	items, err := h.store.ListTaskStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), taskID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -425,7 +432,7 @@ func (h *Handler) reviewStudent(c *gin.Context) {
 		reviewerID = &principal.SubjectID
 	}
 	var previousStatus string
-	students, studentsErr := h.store.ListTaskStudents(c.Request.Context(), h.orgID, taskID)
+	students, studentsErr := h.store.ListTaskStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), taskID)
 	if studentsErr != nil {
 		respondError(c, studentsErr)
 		return
@@ -436,7 +443,7 @@ func (h *Handler) reviewStudent(c *gin.Context) {
 			break
 		}
 	}
-	item, err := h.store.ReviewStudent(c.Request.Context(), h.orgID, ReviewStudentParams{TaskID: taskID, StudentID: studentID, Status: req.Status, CorrectionNote: strings.TrimSpace(req.CorrectionNote), ReviewedByUserID: reviewerID})
+	item, err := h.store.ReviewStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewStudentParams{TaskID: taskID, StudentID: studentID, Status: req.Status, CorrectionNote: strings.TrimSpace(req.CorrectionNote), ReviewedByUserID: reviewerID})
 	if err != nil {
 		respondError(c, err)
 		return
@@ -453,7 +460,7 @@ func (h *Handler) notifyHomeworkPublished(c *gin.Context, task Task, roster []St
 		return nil
 	}
 	for _, student := range roster {
-		if _, err := h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.ID, Kind: "homework_published", Title: "今日作业已发布", Content: fmt.Sprintf("%s：%s", task.Subject, task.Content)}); err != nil {
+		if _, err := h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.ID, Kind: "homework_published", Title: "今日作业已发布", Content: fmt.Sprintf("%s：%s", task.Subject, task.Content)}); err != nil {
 			return err
 		}
 	}
@@ -477,7 +484,7 @@ func (h *Handler) notifyHomeworkReview(c *gin.Context, student TaskStudent, stat
 	if strings.TrimSpace(student.CorrectionNote) != "" {
 		content += "；老师意见：" + strings.TrimSpace(student.CorrectionNote)
 	}
-	_, err := h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.StudentID, Kind: "homework_review", Title: title, Content: content})
+	_, err := h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.StudentID, Kind: "homework_review", Title: title, Content: content})
 	return err
 }
 
@@ -495,7 +502,7 @@ func (h *Handler) listParentHomework(c *gin.Context) {
 		response.Error(c, response.Internal(errors.New("家长绑定服务未配置")))
 		return
 	}
-	bindings, err := h.parents.ListBindings(c.Request.Context(), h.orgID, principal.SubjectID)
+	bindings, err := h.parents.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID)
 	if err != nil {
 		response.Error(c, response.Internal(err))
 		return
@@ -511,7 +518,7 @@ func (h *Handler) listParentHomework(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	items, err := h.store.ListStudentHomework(c.Request.Context(), h.orgID, studentID)
+	items, err := h.store.ListStudentHomework(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -542,7 +549,7 @@ func (h *Handler) filterTasksForPrincipal(c *gin.Context, items []Task) ([]Task,
 	if !scoped || principal.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return items, nil
 	}
-	assigned, err := h.assignments.List(c.Request.Context(), h.orgID, principal.SubjectID, 0)
+	assigned, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +569,7 @@ func (h *Handler) filterTasksForPrincipal(c *gin.Context, items []Task) ([]Task,
 }
 
 func (h *Handler) taskForPrincipal(c *gin.Context, taskID uint64) (Task, bool) {
-	item, err := h.store.FindTask(c.Request.Context(), h.orgID, taskID)
+	item, err := h.store.FindTask(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), taskID)
 	if err != nil {
 		respondError(c, err)
 		return Task{}, false
@@ -579,7 +586,7 @@ func (h *Handler) ensureClassAccess(c *gin.Context, schoolClassID uint64) error 
 	if !scoped || h.assignments == nil || principal.Role != identity.UserRoleTeacher {
 		return nil
 	}
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, principal.SubjectID, schoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, schoolClassID)
 	if err != nil {
 		if errors.Is(err, assignment.ErrNotFound) {
 			return ErrNotFound
@@ -657,7 +664,7 @@ func (h *Handler) signedPhotoURLs(values []string) []string {
 	}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		out = append(out, h.photoSigner.Sign(value, 15*time.Minute))
+		out = append(out, h.photoSigner.Sign(value, h.photoURLTTL))
 	}
 	return out
 }

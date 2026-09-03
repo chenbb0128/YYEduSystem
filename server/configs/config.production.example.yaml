@@ -1,0 +1,125 @@
+# 豆芽成长助手生产配置模板。
+# 复制后通过部署平台的 Secret/环境变量注入敏感项，不要把真实密钥提交到 Git。
+app:
+  name: douya-growth-helper
+  env: production
+
+http:
+  addr: ":8080"
+  read_header_timeout: 5s
+  read_timeout: 15s
+  write_timeout: 30s
+  idle_timeout: 60s
+  shutdown_timeout: 10s
+  max_header_bytes: 1048576
+  max_body_bytes: 8388608
+  trusted_proxies: []
+  cors:
+    # 替换为实际管理端 HTTPS 地址；不要使用 *。
+    allowed_origins: ["https://admin.example.com"]
+    allowed_methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    allowed_headers: [Authorization, Content-Type, X-Request-ID, traceparent, tracestate]
+    allow_credentials: false
+
+auth:
+  secret: "REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARS"
+  access_ttl: 2h
+  refresh_ttl: 720h
+  bootstrap_admin_enabled: false
+  bootstrap_platform_admin_enabled: false
+
+wechat:
+  enabled: true
+  app_id: "REPLACE_WITH_WECHAT_APPID"
+  app_secret: "REPLACE_WITH_WECHAT_APPSECRET"
+  endpoint: "https://api.weixin.qq.com/sns/jscode2session"
+  timeout: 5s
+  subscribe_page: "pages/parent/index"
+  # 在微信公众平台审核通过后，分别填写五类正式模板 ID。
+  subscribe_templates:
+    pickup: "REPLACE_WITH_PICKUP_TEMPLATE_ID"
+    meal: "REPLACE_WITH_MEAL_TEMPLATE_ID"
+    homework: "REPLACE_WITH_HOMEWORK_TEMPLATE_ID"
+    leave: "REPLACE_WITH_LEAVE_TEMPLATE_ID"
+    summary: "REPLACE_WITH_SUMMARY_TEMPLATE_ID"
+  subscribe_template_fields:
+    # 按实际模板 keyword 字段调整；字段名称不是固定的 thing1/thing2/time3。
+    pickup: { title: thing1, content: thing2, time: time3 }
+    meal: { title: thing1, content: thing2, time: time3 }
+    homework: { title: thing1, content: thing2, time: time3 }
+    leave: { title: thing1, content: thing2, time: time3 }
+    summary: { title: thing1, content: thing2, time: time3 }
+
+sms:
+  # 开通腾讯云短信后再启用；真实密钥请通过环境变量注入，不要提交到仓库。
+  enabled: false
+  provider: tencent
+  secret_id: "REPLACE_WITH_TENCENT_SECRET_ID"
+  secret_key: "REPLACE_WITH_TENCENT_SECRET_KEY"
+  sdk_app_id: "REPLACE_WITH_TENCENT_SMS_SDK_APP_ID"
+  sign_name: "REPLACE_WITH_SMS_SIGN_NAME"
+  template_id: "REPLACE_WITH_SMS_TEMPLATE_ID"
+  region: ap-guangzhou
+  endpoint: "https://sms.tencentcloudapi.com/"
+  timeout: 5s
+  code_secret: "REPLACE_WITH_A_RANDOM_SMS_CODE_SECRET"
+  code_length: 6
+  code_ttl: 5m
+  resend_interval: 60s
+  max_verify_attempts: 5
+
+storage:
+  provider: s3
+  upload_dir: ""
+  url_signing_secret: "REPLACE_WITH_A_SECOND_RANDOM_SECRET"
+  endpoint: "https://oss.example.com"
+  bucket: "douya-growth-private"
+  region: "cn-shanghai"
+  access_key: "REPLACE_WITH_OBJECT_STORAGE_ACCESS_KEY"
+  secret_key: "REPLACE_WITH_OBJECT_STORAGE_SECRET_KEY"
+  path_style: false
+  signed_url_ttl: 15m
+  max_file_bytes: 5242880
+  retention_days: 90
+
+database:
+  enabled: true
+  driver: mysql
+  # 建议由 TUOGUAN_SYSTEM_DATABASE_DSN 注入，密码中有特殊字符时先 URL 编码。
+  dsn: "REPLACE_WITH_DB_USER:REPLACE_WITH_DB_PASSWORD@tcp(mysql.example.com:3306)/tuoguan_system?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=UTC"
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 5m
+  ping_timeout: 3s
+
+redis:
+  enabled: true
+  addr: "redis.example.com:6379"
+  username: ""
+  password: "REPLACE_WITH_REDIS_PASSWORD"
+  db: 0
+  dial_timeout: 3s
+  read_timeout: 2s
+  write_timeout: 2s
+  ping_timeout: 2s
+  pool_size: 20
+  min_idle_conns: 5
+  key_prefix: "douya-growth:production"
+
+worker:
+  enabled: true
+  concurrency: 10
+  shutdown_timeout: 20s
+  notification_poll_interval: 2s
+  notification_lease: 30s
+  notification_max_attempts: 3
+  schedule_generation_interval: 5m
+  queues: { default: 1 }
+
+observability:
+  metrics: { enabled: true, path: /metrics, namespace: douya_growth }
+  tracing: { enabled: false, exporter: stdout, endpoint: localhost:4317, insecure: false, sample_ratio: 0.1 }
+
+log:
+  level: info

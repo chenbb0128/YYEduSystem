@@ -184,20 +184,21 @@ func (q *Queries) CreatePickupEvent(ctx context.Context, arg CreatePickupEventPa
 const createPickupOperation = `-- name: CreatePickupOperation :execresult
 INSERT INTO pickup_operations (
     organization_id, operation_date, pickup_mode, school_id, school_class_id,
-    care_class_id, teacher_user_id, teacher_name, status, notes
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+    care_class_id, teacher_user_id, teacher_name, status, expected_pickup_time, notes
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
 `
 
 type CreatePickupOperationParams struct {
-	OrganizationID uint64        `json:"organization_id"`
-	OperationDate  time.Time     `json:"operation_date"`
-	PickupMode     string        `json:"pickup_mode"`
-	SchoolID       uint64        `json:"school_id"`
-	SchoolClassID  uint64        `json:"school_class_id"`
-	CareClassID    sql.NullInt64 `json:"care_class_id"`
-	TeacherUserID  sql.NullInt64 `json:"teacher_user_id"`
-	TeacherName    string        `json:"teacher_name"`
-	Notes          string        `json:"notes"`
+	OrganizationID     uint64        `json:"organization_id"`
+	OperationDate      time.Time     `json:"operation_date"`
+	PickupMode         string        `json:"pickup_mode"`
+	SchoolID           uint64        `json:"school_id"`
+	SchoolClassID      uint64        `json:"school_class_id"`
+	CareClassID        sql.NullInt64 `json:"care_class_id"`
+	TeacherUserID      sql.NullInt64 `json:"teacher_user_id"`
+	TeacherName        string        `json:"teacher_name"`
+	ExpectedPickupTime string        `json:"expected_pickup_time"`
+	Notes              string        `json:"notes"`
 }
 
 func (q *Queries) CreatePickupOperation(ctx context.Context, arg CreatePickupOperationParams) (sql.Result, error) {
@@ -210,6 +211,7 @@ func (q *Queries) CreatePickupOperation(ctx context.Context, arg CreatePickupOpe
 		arg.CareClassID,
 		arg.TeacherUserID,
 		arg.TeacherName,
+		arg.ExpectedPickupTime,
 		arg.Notes,
 	)
 }
