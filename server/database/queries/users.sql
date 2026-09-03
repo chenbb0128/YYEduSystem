@@ -1,41 +1,48 @@
 -- name: CreateUser :execresult
 INSERT INTO users (
+    organization_id,
     username,
     password_hash,
     role,
     nickname,
     avatar,
     status
-) VALUES (?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetUserByID :one
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-WHERE id = ?
+LEFT JOIN organizations ON organizations.id = users.organization_id
+WHERE users.id = ?
 LIMIT 1;
 
 -- name: GetUserByUsername :one
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-WHERE username = ?
+LEFT JOIN organizations ON organizations.id = users.organization_id
+WHERE users.username = ?
 LIMIT 1;
 
 -- name: UpdateUserProfile :execresult
@@ -47,17 +54,20 @@ WHERE id = ?;
 
 -- name: ListUsers :many
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-ORDER BY id ASC;
+LEFT JOIN organizations ON organizations.id = users.organization_id
+ORDER BY users.id ASC;
 
 -- name: UpdateUser :execresult
 UPDATE users

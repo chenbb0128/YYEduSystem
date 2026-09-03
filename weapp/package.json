@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.21.0",
-  "description": "星芽托管助手微信小程序",
+  "description": "豆芽成长助手微信小程序",
   "engines": {
     "node": ">=20",
     "pnpm": ">=11"

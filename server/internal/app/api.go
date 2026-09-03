@@ -30,13 +30,19 @@ import (
 	parentmysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/parent/mysqlrepo"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
 	pickupmysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup/mysqlrepo"
+	platformadmin "github.com/chenbb0128/tuoguan-system-server/internal/modules/platformadmin"
+	platformadminmysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/platformadmin/mysqlrepo"
 	reportmodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/report"
+	schedulemodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/schedule"
+	schedulemysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/schedule/mysqlrepo"
 	summarymodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/summary"
 	summarymysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/summary/mysqlrepo"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/database"
 	platformmetrics "github.com/chenbb0128/tuoguan-system-server/internal/platform/metrics"
 	redisclient "github.com/chenbb0128/tuoguan-system-server/internal/platform/redis"
+	smsplatform "github.com/chenbb0128/tuoguan-system-server/internal/platform/sms"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/verification"
 	wechatclient "github.com/chenbb0128/tuoguan-system-server/internal/platform/wechat"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/middleware"
@@ -62,9 +68,11 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	var homeworkStore homework.Store
 	var mealStore mealmodule.Store
 	var summaryStore summarymodule.Store
+	var scheduleStore schedulemodule.Store
 	var userStore identity.UserStore
 	var auditStore auditmodule.Store
 	var mediaStore mediamodule.Store
+	var platformStore platformadmin.Store
 
 	if cfg.Database.Enabled {
 		openCtx, cancel := context.WithTimeout(context.Background(), cfg.Database.PingTimeout)
@@ -77,6 +85,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		db = opened
 		masterDataStore = masterdatamysqlrepo.New(db.SQL)
 		pickupStore = pickupmysqlrepo.New(db.SQL)
+		scheduleStore = schedulemysqlrepo.New(db.SQL)
 		parentStore = parentmysqlrepo.New(db.SQL)
 		assignmentStore = assignmentmysqlrepo.New(db.SQL)
 		homeworkStore = homeworkmysqlrepo.New(db.SQL)
@@ -85,6 +94,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		userStore = identitymysqlrepo.New(db.SQL)
 		auditStore = auditmysqlrepo.New(db.SQL)
 		mediaStore = mediamysqlrepo.New(db.SQL)
+		platformStore = platformadminmysqlrepo.New(db.SQL)
 		checks = append(checks, httpapi.ReadyCheck{
 			Name: "mysql",
 			Check: func(ctx context.Context) error {
@@ -99,6 +109,9 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	}
 	if pickupStore == nil {
 		pickupStore = pickup.NewMemoryStore()
+	}
+	if scheduleStore == nil {
+		scheduleStore = schedulemodule.NewMemoryStore()
 	}
 	if parentStore == nil {
 		parentStore = parent.NewMemoryStore()
@@ -124,12 +137,23 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	if mediaStore == nil {
 		mediaStore = mediamodule.NewMemoryStore()
 	}
+	if platformStore == nil {
+		platformStore = platformadmin.NewMemoryStore()
+	}
 	if cfg.Auth.BootstrapAdminEnabled {
 		if err := identity.EnsureConfiguredAdmin(context.Background(), userStore, cfg.Auth.BootstrapAdminUsername, cfg.Auth.BootstrapAdminPassword); err != nil {
 			if db != nil {
 				_ = db.Close()
 			}
 			return nil, fmt.Errorf("bootstrap admin user: %w", err)
+		}
+	}
+	if cfg.Auth.BootstrapPlatformAdminEnabled {
+		if err := identity.EnsureConfiguredPlatformAdmin(context.Background(), userStore, cfg.Auth.BootstrapPlatformAdminUsername, cfg.Auth.BootstrapPlatformAdminPassword); err != nil {
+			if db != nil {
+				_ = db.Close()
+			}
+			return nil, fmt.Errorf("bootstrap platform admin user: %w", err)
 		}
 	}
 	secret := cfg.Auth.Secret
@@ -152,6 +176,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		return nil, err
 	}
 	identityHandler := identity.NewHandler(userStore, tokens)
+	platformHandler := platformadmin.NewHandler(platformStore, userStore)
 	masterDataHandler := masterdata.NewHandler(masterDataStore)
 	var photoStore storage.Store
 	var uploadReader storage.FileReader
@@ -213,8 +238,10 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	summaryHandler.SetNotificationWriter(pickupStore)
 	summaryHandler.SetStaffScope(assignmentStore)
 	summaryHandler.SetAuditWriter(auditStore)
+	scheduleHandler := schedulemodule.NewHandler(scheduleStore, masterDataStore, assignmentStore, userStore, pickupStore)
 	parentHandler := parent.NewHandler(parentStore, masterDataStore, pickupStore, tokens)
 	parentHandler.SetStaffScope(assignmentStore)
+	parentHandler.SetUserStore(userStore)
 	parentHandler.SetAuditWriter(auditStore)
 	auditHandler := auditmodule.NewHandler(auditStore, masterdata.DefaultOrganizationID)
 	reportHandler := reportmodule.NewHandler(pickupStore, homeworkStore, mealStore, parentStore, masterDataStore, summaryStore, assignmentStore)
@@ -230,16 +257,21 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		return nil, err
 	}
 	pickupHandler.SetPhotoSigner(photoSigner)
+	pickupHandler.SetPhotoURLTTL(cfg.Storage.SignedURLTTL)
 	pickupHandler.SetAssetStore(mediaStore)
 	pickupHandler.SetAssetRetentionDays(cfg.Storage.RetentionDays)
 	homeworkHandler.SetPhotoSigner(photoSigner)
+	homeworkHandler.SetPhotoURLTTL(cfg.Storage.SignedURLTTL)
 	homeworkHandler.SetAssetStore(mediaStore)
 	homeworkHandler.SetAssetRetentionDays(cfg.Storage.RetentionDays)
 	parentHandler.SetPhotoSigner(photoSigner)
+	parentHandler.SetPhotoURLTTL(cfg.Storage.SignedURLTTL)
 	mealHandler.SetPhotoSigner(photoSigner)
+	mealHandler.SetPhotoURLTTL(cfg.Storage.SignedURLTTL)
 	mealHandler.SetAssetStore(mediaStore)
 	mealHandler.SetAssetRetentionDays(cfg.Storage.RetentionDays)
 	parentHandler.SetAllowLocalCode(!strings.EqualFold(cfg.App.Env, "prod") && !strings.EqualFold(cfg.App.Env, "production"))
+	parentHandler.SetAllowLocalPhoneCode(!strings.EqualFold(cfg.App.Env, "prod") && !strings.EqualFold(cfg.App.Env, "production"))
 	if cfg.WeChat.Enabled {
 		createdWechat, wechatErr := wechatclient.NewClient(cfg.WeChat.AppID, cfg.WeChat.Secret, cfg.WeChat.Endpoint, cfg.WeChat.Timeout)
 		if wechatErr != nil {
@@ -271,6 +303,39 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			},
 		})
 	}
+	verificationStore := verification.Store(verification.NewMemoryStore())
+	if redis != nil {
+		createdVerificationStore, storeErr := verification.NewRedisStore(redis)
+		if storeErr != nil {
+			if db != nil {
+				_ = db.Close()
+			}
+			_ = redis.Close()
+			return nil, storeErr
+		}
+		verificationStore = createdVerificationStore
+	}
+	phoneCodeSender, senderErr := smsplatform.NewSender(cfg.SMS)
+	if senderErr != nil {
+		if db != nil {
+			_ = db.Close()
+		}
+		if redis != nil {
+			_ = redis.Close()
+		}
+		return nil, fmt.Errorf("configure SMS sender: %w", senderErr)
+	}
+	phoneCodeService, serviceErr := verification.NewService(verificationStore, phoneCodeSender, cfg.SMS, secret)
+	if serviceErr != nil {
+		if db != nil {
+			_ = db.Close()
+		}
+		if redis != nil {
+			_ = redis.Close()
+		}
+		return nil, fmt.Errorf("configure phone verification: %w", serviceErr)
+	}
+	parentHandler.SetPhoneCodeService(phoneCodeService)
 
 	if cfg.Observability.Metrics.Enabled {
 		created, err := platformmetrics.New(cfg.Observability.Metrics)
@@ -296,6 +361,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		RegisterAPIRoutes: func(apiGroup *gin.RouterGroup) {
 			identityHandler.RegisterPublicRoutes(apiGroup)
 			parentHandler.RegisterAuthRoutes(apiGroup)
+			platformHandler.RegisterPublicRoutes(apiGroup)
 
 			authenticated := apiGroup.Group("")
 			authenticated.Use(middleware.Authenticate(tokens, userStore))
@@ -306,6 +372,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			identityHandler.RegisterStaffRoutes(staff)
 			auditHandler.RegisterRoutes(staff)
 			assignmentHandler.RegisterRoutes(staff)
+			scheduleHandler.RegisterRoutes(staff)
 			homeworkHandler.RegisterStaffRoutes(staff)
 			masterDataRead := staff.Group("")
 			masterDataRead.Use(teacherMasterDataScope(assignmentStore))
@@ -318,6 +385,10 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			mealHandler.RegisterStaffRoutes(staff)
 			summaryHandler.RegisterStaffRoutes(staff)
 			reportHandler.RegisterRoutes(staff)
+
+			platform := authenticated.Group("")
+			platform.Use(middleware.RequirePlatformAdmin())
+			platformHandler.RegisterRoutes(platform)
 
 			parents := authenticated.Group("")
 			parents.Use(middleware.RequireParent())

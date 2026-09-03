@@ -1,7 +1,9 @@
 :root {
-  --sprout-primary: #2563eb;
-  --sprout-primary-deep: #1d4ed8;
-  --sprout-primary-soft: #edf4ff;
+  --sprout-primary: #4096ff;
+  --sprout-primary-deep: #2f7cf6;
+  --sprout-primary-soft: #e6f4ff;
+  --sprout-primary-soft-hover: #d8ecff;
+  --sprout-primary-rgb: 64 150 255;
   --sprout-sky: #0ea5e9;
   --sprout-sky-soft: #eaf8ff;
   --sprout-sun: #f59e0b;
@@ -49,7 +51,7 @@ textarea:focus::placeholder {
 }
 
 .sprout-basic-layout {
-  --primary: 221 83% 53%;
+  --primary: 211 100% 63%;
   --background-deep: 220 33% 97%;
   --background: 0 0% 100%;
   --border: 220 29% 91%;
@@ -111,7 +113,7 @@ textarea:focus::placeholder {
 }
 
 .sprout-auth-layout {
-  --primary: 221 83% 53%;
+  --primary: 211 100% 63%;
 
   color: var(--sprout-ink);
   background: var(--sprout-page);
@@ -158,7 +160,7 @@ textarea:focus::placeholder {
   color: #fff;
   background: linear-gradient(145deg, #60a5fa, #2563eb);
   border-radius: 10px 10px 10px 4px;
-  box-shadow: 0 5px 12px rgb(37 99 235 / 22%);
+  box-shadow: 0 5px 12px rgb(var(--sprout-primary-rgb) / 20%);
 }
 
 .sprout-auth-layout input {
@@ -177,7 +179,7 @@ textarea:focus::placeholder {
   font-weight: 700;
   background: var(--sprout-primary);
   border-radius: 12px;
-  box-shadow: 0 8px 18px rgb(37 99 235 / 22%);
+  box-shadow: 0 8px 18px rgb(var(--sprout-primary-rgb) / 18%);
 }
 
 .sprout-auth-layout button[type='submit']:hover,
@@ -469,13 +471,27 @@ textarea:focus::placeholder {
 .sprout-page .el-button--primary {
   background: var(--sprout-primary);
   border-color: var(--sprout-primary);
-  box-shadow: 0 5px 12px rgb(37 99 235 / 18%);
+  box-shadow: 0 5px 12px rgb(var(--sprout-primary-rgb) / 14%);
 }
 
 .sprout-page .el-button--primary:hover,
 .sprout-page .el-button--primary:focus-visible {
   background: var(--sprout-primary-deep);
   border-color: var(--sprout-primary-deep);
+}
+
+.sprout-page .el-button--primary.is-link {
+  color: var(--sprout-primary-deep);
+  background: var(--sprout-primary-soft);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.sprout-page .el-button--primary.is-link:hover,
+.sprout-page .el-button--primary.is-link:focus-visible {
+  color: var(--sprout-primary-deep);
+  background: var(--sprout-primary-soft-hover);
+  border-color: transparent;
 }
 
 .sprout-page .el-button--success {

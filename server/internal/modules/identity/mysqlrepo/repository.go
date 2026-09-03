@@ -26,12 +26,13 @@ func New(exec database.DBTX) *Repository {
 
 func (r *Repository) CreateUser(ctx context.Context, params identity.CreateUserParams) (identity.User, error) {
 	result, err := r.queries.CreateUser(ctx, sqlc.CreateUserParams{
-		Username:     params.Username,
-		PasswordHash: params.PasswordHash,
-		Role:         string(params.Role),
-		Nickname:     params.Nickname,
-		Avatar:       params.Avatar,
-		Status:       string(params.Status),
+		OrganizationID: defaultOrganizationID(params.OrganizationID),
+		Username:       params.Username,
+		PasswordHash:   params.PasswordHash,
+		Role:           string(params.Role),
+		Nickname:       params.Nickname,
+		Avatar:         params.Avatar,
+		Status:         string(params.Status),
 	})
 	if err != nil {
 		return identity.User{}, translateError(err)
@@ -53,7 +54,7 @@ func (r *Repository) FindUserByID(ctx context.Context, id uint64) (identity.User
 	if err != nil {
 		return identity.User{}, translateError(err)
 	}
-	return mapUser(user.ID, user.Username, user.PasswordHash, user.Role, user.Nickname, user.Avatar, user.Status, user.CreatedAt, user.UpdatedAt), nil
+	return mapUser(user.ID, user.OrganizationID, user.OrganizationStatus, user.Username, user.PasswordHash, user.Role, user.Nickname, user.Avatar, user.Status, user.CreatedAt, user.UpdatedAt), nil
 }
 
 func (r *Repository) FindUserByUsername(ctx context.Context, username string) (identity.User, error) {
@@ -61,7 +62,7 @@ func (r *Repository) FindUserByUsername(ctx context.Context, username string) (i
 	if err != nil {
 		return identity.User{}, translateError(err)
 	}
-	return mapUser(user.ID, user.Username, user.PasswordHash, user.Role, user.Nickname, user.Avatar, user.Status, user.CreatedAt, user.UpdatedAt), nil
+	return mapUser(user.ID, user.OrganizationID, user.OrganizationStatus, user.Username, user.PasswordHash, user.Role, user.Nickname, user.Avatar, user.Status, user.CreatedAt, user.UpdatedAt), nil
 }
 
 func (r *Repository) ListUsers(ctx context.Context) ([]identity.User, error) {
@@ -71,7 +72,7 @@ func (r *Repository) ListUsers(ctx context.Context) ([]identity.User, error) {
 	}
 	users := make([]identity.User, 0, len(items))
 	for _, item := range items {
-		users = append(users, mapUser(item.ID, item.Username, item.PasswordHash, item.Role, item.Nickname, item.Avatar, item.Status, item.CreatedAt, item.UpdatedAt))
+		users = append(users, mapUser(item.ID, item.OrganizationID, item.OrganizationStatus, item.Username, item.PasswordHash, item.Role, item.Nickname, item.Avatar, item.Status, item.CreatedAt, item.UpdatedAt))
 	}
 	return users, nil
 }
@@ -107,18 +108,19 @@ func (r *Repository) SetUserStatus(ctx context.Context, params identity.SetUserS
 	return ensureAffected(result)
 }
 
-func mapUser(id uint64, username, passwordHash, role, nickname, avatar, status string, createdAt, updatedAt time.Time) identity.User {
+func mapUser(id, organizationID uint64, organizationStatus, username, passwordHash, role, nickname, avatar, status string, createdAt, updatedAt time.Time) identity.User {
 	return identity.User{
-		ID:           id,
-		Username:     username,
-		PasswordHash: passwordHash,
-		Role:         identity.UserRole(role),
-		Nickname:     nickname,
-		Avatar:       avatar,
-		Status:       identity.UserStatus(status),
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		ID: id, OrganizationID: organizationID, OrganizationStatus: organizationStatus,
+		Username: username, PasswordHash: passwordHash, Role: identity.UserRole(role), Nickname: nickname,
+		Avatar: avatar, Status: identity.UserStatus(status), CreatedAt: createdAt, UpdatedAt: updatedAt,
 	}
+}
+
+func defaultOrganizationID(value uint64) uint64 {
+	if value == 0 {
+		return 1
+	}
+	return value
 }
 
 func translateError(err error) error {

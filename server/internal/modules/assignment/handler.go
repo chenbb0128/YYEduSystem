@@ -95,7 +95,7 @@ func (h *Handler) list(c *gin.Context) {
 		}
 		schoolClassID = parsed
 	}
-	items, err := h.store.List(c.Request.Context(), h.orgID, teacherUserID, schoolClassID)
+	items, err := h.store.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), teacherUserID, schoolClassID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -125,7 +125,7 @@ func (h *Handler) create(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	item, err := h.store.Create(c.Request.Context(), h.orgID, CreateParams{TeacherUserID: req.TeacherUserID, SchoolClassID: req.SchoolClassID})
+	item, err := h.store.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateParams{TeacherUserID: req.TeacherUserID, SchoolClassID: req.SchoolClassID})
 	if err != nil {
 		respondError(c, err)
 		return
@@ -156,7 +156,7 @@ func (h *Handler) update(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "status", Reason: "required"}}))
 		return
 	}
-	item, err := h.store.SetStatus(c.Request.Context(), h.orgID, SetStatusParams{ID: id, Status: req.Status})
+	item, err := h.store.SetStatus(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), SetStatusParams{ID: id, Status: req.Status})
 	if err != nil {
 		respondError(c, err)
 		return
@@ -177,7 +177,7 @@ func (h *Handler) validateRelations(ctx context.Context, teacherUserID, schoolCl
 	if user.Role != identity.UserRoleTeacher || user.Status != identity.UserStatusActive {
 		return errors.New("assignment: user is not an active teacher")
 	}
-	class, err := h.masterData.ListSchoolClasses(ctx, h.orgID)
+	class, err := h.masterData.ListSchoolClasses(ctx, identity.OrganizationIDFromContext(ctx, h.orgID))
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (h *Handler) toView(ctx context.Context, item TeacherClassAssignment) (assi
 	if err != nil {
 		return assignmentView{}, err
 	}
-	classes, err := h.masterData.ListSchoolClasses(ctx, h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(ctx, identity.OrganizationIDFromContext(ctx, h.orgID))
 	if err != nil {
 		return assignmentView{}, err
 	}

@@ -1,6 +1,6 @@
 <view class="page homework-page">
   <view class="page-header">
-    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">星芽托管助手 · 教师端</view><view class="page-title">作业管理</view><view class="page-subtitle">布置清晰的任务，也给每一份努力温柔的反馈</view></view></view>
+    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">豆芽成长助手 · 教师端</view><view class="page-title">作业管理</view><view class="page-subtitle">布置清晰的任务，也给每一份努力温柔的反馈</view></view></view>
     <view class="page-helper">{{loading ? '作业同步中…' : '批改结果同步家长端'}}</view>
   </view>
 

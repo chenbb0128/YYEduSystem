@@ -14,6 +14,16 @@ const routes: RouteRecordRaw[] = [
       title: $t('page.dashboard.title'),
     },
   },
+  {
+    name: 'PickupSchedules',
+    path: '/pickup-schedules',
+    component: () => import('#/views/pickup-schedules/index.vue'),
+    meta: {
+      icon: 'lucide:calendar-clock',
+      order: 4.5,
+      title: '接送排班',
+    },
+  },
 ];
 
 export default routes;

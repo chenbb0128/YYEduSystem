@@ -14,6 +14,7 @@ const (
 	CodeNotFound              = 10005
 	CodeMethodNotAllowed      = 10006
 	CodeValidationFailed      = 10007
+	CodeRateLimited           = 10008
 	CodeUnauthorized          = 20001
 	CodeForbidden             = 20003
 	CodeInternal              = 50000
@@ -94,6 +95,10 @@ func ValidationFailed(details []ValidationDetail) *AppError {
 		Message:    "请求参数不合法",
 		Details:    details,
 	}
+}
+
+func RateLimited(message string, err error) *AppError {
+	return NewError(CodeRateLimited, http.StatusTooManyRequests, message, err)
 }
 
 func Unauthorized() *AppError {

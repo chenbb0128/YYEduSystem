@@ -4,6 +4,17 @@ import { $t } from '#/locales';
 
 const routes: RouteRecordRaw[] = [
   {
+    name: 'PlatformManagement',
+    path: '/platform',
+    component: () => import('#/views/platform/index.vue'),
+    meta: {
+      authority: ['platform:dashboard'],
+      icon: 'lucide:building-2',
+      order: -2,
+      title: '平台总管理',
+    },
+  },
+  {
     name: 'PickupOperations',
     path: '/pickup-operations',
     component: () => import('#/views/pickup/index.vue'),

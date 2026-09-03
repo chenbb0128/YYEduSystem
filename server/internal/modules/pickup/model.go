@@ -193,14 +193,15 @@ type StudentRef struct {
 }
 
 type CreateOperationParams struct {
-	OperationDate time.Time
-	PickupMode    string
-	SchoolID      uint64
-	SchoolClassID uint64
-	CareClassID   *uint64
-	TeacherUserID *uint64
-	TeacherName   string
-	Notes         string
+	OperationDate      time.Time
+	PickupMode         string
+	SchoolID           uint64
+	SchoolClassID      uint64
+	CareClassID        *uint64
+	TeacherUserID      *uint64
+	TeacherName        string
+	ExpectedPickupTime string
+	Notes              string
 }
 
 type SetOperationStatusParams struct {

@@ -17,6 +17,7 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/verification"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -27,16 +28,20 @@ const (
 )
 
 type Handler struct {
-	store          Store
-	masterData     masterdata.Store
-	pickup         pickup.Store
-	tokens         *identity.TokenManager
-	exchanger      CodeExchanger
-	allowLocalCode bool
-	assignments    assignment.Store
-	audit          auditmodule.Writer
-	photoSigner    *storage.URLSigner
-	orgID          uint64
+	store               Store
+	masterData          masterdata.Store
+	pickup              pickup.Store
+	users               identity.UserStore
+	tokens              *identity.TokenManager
+	exchanger           CodeExchanger
+	allowLocalCode      bool
+	allowLocalPhoneCode bool
+	phoneCodeService    *verification.Service
+	assignments         assignment.Store
+	audit               auditmodule.Writer
+	photoSigner         *storage.URLSigner
+	photoURLTTL         time.Duration
+	orgID               uint64
 }
 
 type CodeExchanger interface {
@@ -48,21 +53,36 @@ func NewHandler(store Store, masterData masterdata.Store, pickupStore pickup.Sto
 	if len(tokens) > 0 {
 		tokenManager = tokens[0]
 	}
-	return &Handler{store: store, masterData: masterData, pickup: pickupStore, tokens: tokenManager, allowLocalCode: true, orgID: masterdata.DefaultOrganizationID}
+	return &Handler{store: store, masterData: masterData, pickup: pickupStore, tokens: tokenManager, allowLocalCode: true, allowLocalPhoneCode: true, photoURLTTL: 15 * time.Minute, orgID: masterdata.DefaultOrganizationID}
 }
 
 func (h *Handler) SetCodeExchanger(exchanger CodeExchanger) { h.exchanger = exchanger }
 
 func (h *Handler) SetAllowLocalCode(allow bool) { h.allowLocalCode = allow }
 
+// SetAllowLocalPhoneCode controls the development-only demo SMS flow. A
+// production deployment must use WeChat login or a real SMS provider; the
+// hard-coded local verification code is never allowed there.
+func (h *Handler) SetAllowLocalPhoneCode(allow bool) { h.allowLocalPhoneCode = allow }
+
+func (h *Handler) SetPhoneCodeService(service *verification.Service) { h.phoneCodeService = service }
+
 func (h *Handler) SetStaffScope(assignments assignment.Store) { h.assignments = assignments }
 
+func (h *Handler) SetUserStore(users identity.UserStore) { h.users = users }
+
 func (h *Handler) SetPhotoSigner(signer *storage.URLSigner) { h.photoSigner = signer }
+
+func (h *Handler) SetPhotoURLTTL(ttl time.Duration) {
+	if ttl > 0 {
+		h.photoURLTTL = ttl
+	}
+}
 
 func (h *Handler) SetAuditWriter(writer auditmodule.Writer) { h.audit = writer }
 
 func (h *Handler) recordAudit(c *gin.Context, action, resourceType string, resourceID uint64) {
-	auditmodule.RecordForContext(c.Request.Context(), h.audit, h.orgID, action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
+	auditmodule.RecordForContext(c.Request.Context(), h.audit, identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
 }
 
 func (h *Handler) RegisterRoutes(api *gin.RouterGroup) {
@@ -73,6 +93,8 @@ func (h *Handler) RegisterRoutes(api *gin.RouterGroup) {
 
 func (h *Handler) RegisterAuthRoutes(api *gin.RouterGroup) {
 	api.POST("/auth/parent/wechat", h.loginWithWeChat)
+	api.POST("/auth/phone-code", h.sendPhoneCode)
+	api.POST("/auth/phone-login", h.loginWithPhone)
 }
 
 func (h *Handler) RegisterParentRoutes(api *gin.RouterGroup) {
@@ -309,11 +331,8 @@ func (r childApplicationRequest) Validate() []response.ValidationDetail {
 	if strings.TrimSpace(r.GuardianPhone) == "" {
 		details = append(details, response.ValidationDetail{Field: "guardian_phone", Reason: "required"})
 	}
-	if r.SchoolClassID == 0 && strings.TrimSpace(r.SchoolName) == "" {
-		details = append(details, response.ValidationDetail{Field: "school_name", Reason: "required_without_invite"})
-	}
-	if r.SchoolClassID == 0 && strings.TrimSpace(r.ClassText) == "" {
-		details = append(details, response.ValidationDetail{Field: "class_text", Reason: "required_without_invite"})
+	if r.SchoolClassID == 0 && strings.TrimSpace(r.Grade) == "" && strings.TrimSpace(r.ClassText) == "" {
+		details = append(details, response.ValidationDetail{Field: "grade", Reason: "required"})
 	}
 	return details
 }
@@ -347,6 +366,33 @@ type parentLoginRequest struct {
 	OpenID   string `json:"openid"`
 }
 
+type phoneLoginRequest struct {
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
+}
+
+type phoneCodeRequest struct {
+	Phone string `json:"phone"`
+}
+
+func (r phoneCodeRequest) Validate() []response.ValidationDetail {
+	if normalizeLoginPhone(r.Phone) == "" {
+		return []response.ValidationDetail{{Field: "phone", Reason: "invalid_value"}}
+	}
+	return nil
+}
+
+func (r phoneLoginRequest) Validate() []response.ValidationDetail {
+	details := make([]response.ValidationDetail, 0, 2)
+	if normalizeLoginPhone(r.Phone) == "" {
+		details = append(details, response.ValidationDetail{Field: "phone", Reason: "required"})
+	}
+	if strings.TrimSpace(r.Code) == "" {
+		details = append(details, response.ValidationDetail{Field: "code", Reason: "required"})
+	}
+	return details
+}
+
 func (r parentLoginRequest) Validate() []response.ValidationDetail {
 	if strings.TrimSpace(r.Code) == "" && strings.TrimSpace(r.OpenID) == "" {
 		return []response.ValidationDetail{{Field: "code", Reason: "required"}}
@@ -360,6 +406,24 @@ type parentTokenView struct {
 	ExpiresIn    int64  `json:"expiresIn"`
 	Principal    string `json:"principal"`
 	Role         string `json:"role"`
+}
+
+type phoneLoginRoleView struct {
+	Key          string `json:"key"`
+	Principal    string `json:"principal"`
+	Role         string `json:"role"`
+	Label        string `json:"label"`
+	Available    bool   `json:"available"`
+	Message      string `json:"message,omitempty"`
+	AccessToken  string `json:"accessToken,omitempty"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+	ExpiresIn    int64  `json:"expiresIn,omitempty"`
+}
+
+type phoneLoginView struct {
+	Phone       string               `json:"phone"`
+	MaskedPhone string               `json:"masked_phone"`
+	Roles       []phoneLoginRoleView `json:"roles"`
 }
 
 func (r bindStudentRequest) Validate() []response.ValidationDetail {
@@ -384,7 +448,13 @@ func (h *Handler) loginWithWeChat(c *gin.Context) {
 		return
 	}
 	var err error
-	openID := strings.TrimSpace(req.OpenID)
+	// An OpenID supplied by the client is only a local-development escape hatch.
+	// In production the identity must always come from code2Session; otherwise a
+	// caller could impersonate another parent by posting an arbitrary OpenID.
+	openID := ""
+	if h.allowLocalCode {
+		openID = strings.TrimSpace(req.OpenID)
+	}
 	if openID == "" {
 		if h.exchanger != nil {
 			openID, err = h.exchanger.ExchangeCode(c.Request.Context(), req.Code)
@@ -400,11 +470,11 @@ func (h *Handler) loginWithWeChat(c *gin.Context) {
 			return
 		}
 	}
-	account, err := h.store.FindAccountByOpenID(c.Request.Context(), h.orgID, openID)
+	account, err := h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), openID)
 	if errors.Is(err, ErrNotFound) {
-		account, err = h.store.CreateAccount(c.Request.Context(), h.orgID, CreateAccountParams{OpenID: openID, Nickname: strings.TrimSpace(req.Nickname), Avatar: strings.TrimSpace(req.Avatar)})
+		account, err = h.store.CreateAccount(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateAccountParams{OpenID: openID, Nickname: strings.TrimSpace(req.Nickname), Avatar: strings.TrimSpace(req.Avatar)})
 		if errors.Is(err, ErrConflict) {
-			account, err = h.store.FindAccountByOpenID(c.Request.Context(), h.orgID, openID)
+			account, err = h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), openID)
 		}
 	}
 	if err != nil {
@@ -421,6 +491,158 @@ func (h *Handler) loginWithWeChat(c *gin.Context) {
 		return
 	}
 	response.OK(c, parentTokenView{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken, ExpiresIn: pair.ExpiresIn, Principal: string(identity.PrincipalKindParent), Role: "parent"})
+}
+
+func (h *Handler) loginWithPhone(c *gin.Context) {
+	if h.tokens == nil {
+		response.Error(c, response.Internal(errors.New("手机号登录认证未配置")))
+		return
+	}
+	if h.phoneCodeService == nil {
+		response.Error(c, response.DependencyUnavailable(errors.New("phone verification service is not configured")))
+		return
+	}
+	if h.phoneCodeService.Local() && !h.allowLocalPhoneCode {
+		response.Error(c, response.BadRequest("正式环境未配置短信登录，请使用微信登录或教师工作账号", nil))
+		return
+	}
+	var req phoneLoginRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	phone := normalizeLoginPhone(req.Phone)
+	if err := h.phoneCodeService.Verify(c.Request.Context(), phone, req.Code); err != nil {
+		h.respondPhoneCodeError(c, err)
+		return
+	}
+
+	parentAccount, err := h.accountForOpenID(c, "phone:"+phone, "家长"+maskPhoneSuffix(phone), "")
+	if err != nil {
+		h.respondStoreError(c, err)
+		return
+	}
+	if parentAccount.Status != AccountStatusActive {
+		response.Error(c, response.BadRequest("家长账号已停用", nil))
+		return
+	}
+	parentPair, err := h.tokens.IssuePair(identity.Principal{Kind: identity.PrincipalKindParent, SubjectID: parentAccount.ID, OrganizationID: parentAccount.OrganizationID, Role: identity.UserRole("parent")})
+	if err != nil {
+		response.Error(c, response.Internal(err))
+		return
+	}
+
+	roles := []phoneLoginRoleView{{
+		Key:          "parent",
+		Principal:    string(identity.PrincipalKindParent),
+		Role:         "parent",
+		Label:        "家长入口",
+		Available:    true,
+		Message:      "可提交孩子入班申请，审核通过后查看孩子动态",
+		AccessToken:  parentPair.AccessToken,
+		RefreshToken: parentPair.RefreshToken,
+		ExpiresIn:    parentPair.ExpiresIn,
+	}}
+
+	staffRole := phoneLoginRoleView{
+		Key:       "staff",
+		Principal: string(identity.PrincipalKindUser),
+		Role:      "teacher",
+		Label:     "老师 / 校长入口",
+		Available: false,
+		Message:   "该手机号未登记为教职工，请联系管理员开通",
+	}
+	if h.users != nil {
+		user, findErr := h.users.FindUserByUsername(c.Request.Context(), phone)
+		switch {
+		case findErr == nil && user.Status == identity.UserStatusActive:
+			userPair, issueErr := h.tokens.IssuePair(identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: user.ID, OrganizationID: user.OrganizationID, Role: user.Role})
+			if issueErr != nil {
+				response.Error(c, response.Internal(issueErr))
+				return
+			}
+			staffRole.Role = string(user.Role)
+			staffRole.Label = staffLoginLabel(user.Role)
+			staffRole.Available = true
+			staffRole.Message = "手机号已登记，可进入工作台"
+			staffRole.AccessToken = userPair.AccessToken
+			staffRole.RefreshToken = userPair.RefreshToken
+			staffRole.ExpiresIn = userPair.ExpiresIn
+		case findErr == nil:
+			staffRole.Message = "该教职工账号已停用，请联系管理员"
+		case errors.Is(findErr, identity.ErrUserNotFound):
+			// Keep the unavailable staff role in the response so the mini-app can
+			// show a clear explanation after the user chooses the staff entry.
+		default:
+			response.Error(c, response.Internal(findErr))
+			return
+		}
+	}
+	roles = append(roles, staffRole)
+
+	response.OK(c, phoneLoginView{Phone: phone, MaskedPhone: maskPhone(phone), Roles: roles})
+}
+
+type phoneCodeView struct {
+	Phone       string `json:"phone"`
+	MaskedPhone string `json:"masked_phone"`
+	ExpiresIn   int    `json:"expires_in"`
+	RetryAfter  int    `json:"retry_after"`
+	DebugCode   string `json:"debug_code,omitempty"`
+}
+
+func (h *Handler) sendPhoneCode(c *gin.Context) {
+	if h.phoneCodeService == nil {
+		response.Error(c, response.DependencyUnavailable(errors.New("phone verification service is not configured")))
+		return
+	}
+	if h.phoneCodeService.Local() && !h.allowLocalPhoneCode {
+		response.Error(c, response.BadRequest("正式环境未配置短信服务，请联系管理员", nil))
+		return
+	}
+	var req phoneCodeRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	phone := normalizeLoginPhone(req.Phone)
+	result, err := h.phoneCodeService.Issue(c.Request.Context(), phone)
+	if err != nil {
+		h.respondPhoneCodeError(c, err)
+		return
+	}
+	response.OK(c, phoneCodeView{
+		Phone:       result.Phone,
+		MaskedPhone: maskPhone(result.Phone),
+		ExpiresIn:   result.ExpiresIn,
+		RetryAfter:  result.RetryAfter,
+		DebugCode:   result.DebugCode,
+	})
+}
+
+func (h *Handler) respondPhoneCodeError(c *gin.Context, err error) {
+	var rateLimit *verification.RateLimitError
+	switch {
+	case errors.As(err, &rateLimit):
+		seconds := int(rateLimit.RetryAfter / time.Second)
+		if rateLimit.RetryAfter%time.Second != 0 {
+			seconds++
+		}
+		if seconds < 1 {
+			seconds = 1
+		}
+		response.Error(c, response.RateLimited(fmt.Sprintf("请%d秒后再获取验证码", seconds), err))
+	case errors.Is(err, verification.ErrInvalidPhone):
+		response.Error(c, response.BadRequest("手机号格式不正确", err))
+	case errors.Is(err, verification.ErrCodeExpired):
+		response.Error(c, response.BadRequest("验证码已过期，请重新获取", err))
+	case errors.Is(err, verification.ErrTooManyAttempts):
+		response.Error(c, response.BadRequest("验证码错误次数过多，请重新获取", err))
+	case errors.Is(err, verification.ErrInvalidCode):
+		response.Error(c, response.BadRequest("验证码错误或已过期", err))
+	default:
+		response.Error(c, response.DependencyUnavailable(err))
+	}
 }
 
 type createLeaveRequest struct {
@@ -492,7 +714,7 @@ func (h *Handler) bindStudent(c *gin.Context) {
 	if !ok {
 		return
 	}
-	student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, req.StudentID)
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), req.StudentID)
 	if err != nil {
 		h.respondMasterError(c, err)
 		return
@@ -505,7 +727,7 @@ func (h *Handler) bindStudent(c *gin.Context) {
 		response.Error(c, response.BadRequest("家长账号已停用", nil))
 		return
 	}
-	item, err := h.store.CreateBinding(c.Request.Context(), h.orgID, BindStudentParams{ParentAccountID: account.ID, StudentID: student.ID, Relationship: defaultString(req.Relationship, "guardian"), IsPrimary: req.IsPrimary})
+	item, err := h.store.CreateBinding(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), BindStudentParams{ParentAccountID: account.ID, StudentID: student.ID, Relationship: defaultString(req.Relationship, "guardian"), IsPrimary: req.IsPrimary})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -529,7 +751,7 @@ func (h *Handler) createChildApplication(c *gin.Context) {
 		h.respondMasterError(c, err)
 		return
 	}
-	existing, err := h.store.ListChildApplications(c.Request.Context(), h.orgID, &account.ID)
+	existing, err := h.store.ListChildApplications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -547,7 +769,7 @@ func (h *Handler) createChildApplication(c *gin.Context) {
 	if guardianName == "" {
 		guardianName = strings.TrimSpace(account.Nickname)
 	}
-	item, err := h.store.CreateChildApplication(c.Request.Context(), h.orgID, CreateChildApplicationParams{
+	item, err := h.store.CreateChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateChildApplicationParams{
 		ParentAccountID: account.ID,
 		StudentName:     strings.TrimSpace(req.StudentName),
 		SchoolNameInput: strings.TrimSpace(req.SchoolName),
@@ -579,7 +801,7 @@ func (h *Handler) updateChildApplication(c *gin.Context) {
 	if !ok {
 		return
 	}
-	application, err := h.store.GetChildApplication(c.Request.Context(), h.orgID, id)
+	application, err := h.store.GetChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -601,7 +823,7 @@ func (h *Handler) updateChildApplication(c *gin.Context) {
 		h.respondMasterError(c, err)
 		return
 	}
-	existing, err := h.store.ListChildApplications(c.Request.Context(), h.orgID, &account.ID)
+	existing, err := h.store.ListChildApplications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -619,7 +841,7 @@ func (h *Handler) updateChildApplication(c *gin.Context) {
 	if guardianName == "" {
 		guardianName = strings.TrimSpace(account.Nickname)
 	}
-	item, err := h.store.UpdateChildApplication(c.Request.Context(), h.orgID, UpdateChildApplicationParams{ID: id, CreateChildApplicationParams: CreateChildApplicationParams{
+	item, err := h.store.UpdateChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), UpdateChildApplicationParams{ID: id, CreateChildApplicationParams: CreateChildApplicationParams{
 		ParentAccountID: account.ID,
 		StudentName:     strings.TrimSpace(req.StudentName),
 		SchoolNameInput: strings.TrimSpace(req.SchoolName),
@@ -647,7 +869,7 @@ func (h *Handler) listParentChildApplications(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := h.store.ListChildApplications(c.Request.Context(), h.orgID, &account.ID)
+	items, err := h.store.ListChildApplications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -665,7 +887,7 @@ func (h *Handler) listStaffChildApplications(c *gin.Context) {
 		response.Error(c, response.Unauthorized())
 		return
 	}
-	items, err := h.store.ListChildApplications(c.Request.Context(), h.orgID, nil)
+	items, err := h.store.ListChildApplications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -709,7 +931,7 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 	if !ok {
 		return
 	}
-	application, err := h.store.GetChildApplication(c.Request.Context(), h.orgID, id)
+	application, err := h.store.GetChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -731,7 +953,7 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 		}
 	}
 	if req.Status != ChildApplicationStatusApproved {
-		item, reviewErr := h.store.ReviewChildApplication(c.Request.Context(), h.orgID, ReviewChildApplicationParams{ID: id, Status: req.Status, StudentID: application.StudentID, SchoolID: application.SchoolID, SchoolClassID: application.SchoolClassID, ReviewNote: strings.TrimSpace(req.ReviewNote), ReviewedByUserID: principal.SubjectID})
+		item, reviewErr := h.store.ReviewChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewChildApplicationParams{ID: id, Status: req.Status, StudentID: application.StudentID, SchoolID: application.SchoolID, SchoolClassID: application.SchoolClassID, ReviewNote: strings.TrimSpace(req.ReviewNote), ReviewedByUserID: principal.SubjectID})
 		if reviewErr != nil {
 			h.respondStoreError(c, reviewErr)
 			return
@@ -761,7 +983,7 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 		response.Error(c, response.BadRequest("请先选择孩子所在的学校班级", nil))
 		return
 	}
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondMasterError(c, err)
 		return
@@ -784,7 +1006,7 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 		}
 	}
 
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondMasterError(c, err)
 		return
@@ -810,7 +1032,7 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 		}
 		switch len(matches) {
 		case 0:
-			student, err = h.masterData.CreateStudent(c.Request.Context(), h.orgID, masterdata.CreateStudentParams{SchoolID: schoolClass.SchoolID, TermID: schoolClass.TermID, SchoolClassID: schoolClass.ID, Name: application.StudentName, Gender: "unknown", GuardianPhone: application.GuardianPhone, Notes: "家长提交入班申请后审核建立"})
+			student, err = h.masterData.CreateStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), masterdata.CreateStudentParams{SchoolID: schoolClass.SchoolID, TermID: schoolClass.TermID, SchoolClassID: schoolClass.ID, Name: application.StudentName, Gender: "unknown", GuardianPhone: application.GuardianPhone, Notes: "家长提交入班申请后审核建立"})
 			if err != nil {
 				h.respondMasterError(c, err)
 				return
@@ -827,13 +1049,13 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 	}
 	studentID := student.ID
 	schoolID := schoolClass.SchoolID
-	updated, err := h.store.ReviewChildApplication(c.Request.Context(), h.orgID, ReviewChildApplicationParams{ID: id, Status: ChildApplicationStatusApproved, StudentID: &studentID, SchoolID: &schoolID, SchoolClassID: &schoolClassID, ReviewNote: strings.TrimSpace(req.ReviewNote), ReviewedByUserID: principal.SubjectID})
+	updated, err := h.store.ReviewChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewChildApplicationParams{ID: id, Status: ChildApplicationStatusApproved, StudentID: &studentID, SchoolID: &schoolID, SchoolClassID: &schoolClassID, ReviewNote: strings.TrimSpace(req.ReviewNote), ReviewedByUserID: principal.SubjectID})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
 	}
 	if h.pickup != nil {
-		_, _ = h.pickup.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.ID, Kind: "child_application_approved", Title: "孩子入班申请已通过", Content: application.StudentName + "已通过审核，现在可以接收接送和作业通知。"})
+		_, _ = h.pickup.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.ID, Kind: "child_application_approved", Title: "孩子入班申请已通过", Content: application.StudentName + "已通过审核，现在可以接收接送和作业通知。"})
 	}
 	h.recordAudit(c, "parent.child_application.approve", "child_application", id)
 	response.OK(c, toChildApplicationView(updated, true))
@@ -846,7 +1068,7 @@ func (h *Handler) teacherHasClassAccess(c *gin.Context, principal identity.Princ
 	if h.assignments == nil {
 		return false
 	}
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, principal.SubjectID, schoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, schoolClassID)
 	return err == nil && item.Status == assignment.AssignmentStatusActive
 }
 
@@ -854,11 +1076,11 @@ func (h *Handler) teacherHasSchoolAccess(c *gin.Context, principal identity.Prin
 	if principal.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return false
 	}
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return false
 	}
-	assigned, err := h.assignments.List(c.Request.Context(), h.orgID, principal.SubjectID, 0)
+	assigned, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, 0)
 	if err != nil {
 		return false
 	}
@@ -877,22 +1099,28 @@ func (h *Handler) teacherHasSchoolAccess(c *gin.Context, principal identity.Prin
 
 func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Principal, application ChildApplication) (uint64, error) {
 	schoolID := valueOrZero(application.SchoolID)
+	schoolName := strings.TrimSpace(application.SchoolNameInput)
+	usingFallbackSchool := false
+	if schoolName == "" {
+		schoolName = "待确认学校"
+		usingFallbackSchool = true
+	}
 	if schoolID == 0 {
-		schools, err := h.masterData.ListSchools(c.Request.Context(), h.orgID)
+		schools, err := h.masterData.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if err != nil {
 			return 0, err
 		}
 		for _, school := range schools {
-			if school.Status == "active" && normalizeSchool(school.Name) == normalizeSchool(application.SchoolNameInput) {
+			if school.Status == "active" && normalizeSchool(school.Name) == normalizeSchool(schoolName) {
 				schoolID = school.ID
 				break
 			}
 		}
-		if schoolID == 0 && strings.TrimSpace(application.SchoolNameInput) != "" {
+		if schoolID == 0 {
 			if principal.Role == identity.UserRoleTeacher {
 				return 0, pickup.ErrUnauthorizedOperation
 			}
-			created, createErr := h.masterData.CreateSchool(c.Request.Context(), h.orgID, masterdata.CreateSchoolParams{Name: strings.TrimSpace(application.SchoolNameInput)})
+			created, createErr := h.masterData.CreateSchool(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), masterdata.CreateSchoolParams{Name: schoolName})
 			if createErr != nil && !errors.Is(createErr, masterdata.ErrConflict) {
 				return 0, createErr
 			}
@@ -900,7 +1128,7 @@ func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Prin
 				schoolID = created.ID
 			} else {
 				for _, school := range schools {
-					if school.Status == "active" && normalizeSchool(school.Name) == normalizeSchool(application.SchoolNameInput) {
+					if school.Status == "active" && normalizeSchool(school.Name) == normalizeSchool(schoolName) {
 						schoolID = school.ID
 						break
 					}
@@ -911,11 +1139,11 @@ func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Prin
 	if schoolID == 0 {
 		return 0, masterdata.ErrNotFound
 	}
-	if principal.Role == identity.UserRoleTeacher && !h.teacherHasSchoolAccess(c, principal, schoolID) {
+	if principal.Role == identity.UserRoleTeacher && (usingFallbackSchool || !h.teacherHasSchoolAccess(c, principal, schoolID)) {
 		return 0, pickup.ErrUnauthorizedOperation
 	}
 
-	terms, err := h.masterData.ListAcademicTerms(c.Request.Context(), h.orgID)
+	terms, err := h.masterData.ListAcademicTerms(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return 0, err
 	}
@@ -929,7 +1157,7 @@ func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Prin
 	if termID == 0 {
 		now := time.Now().UTC()
 		termName := fmt.Sprintf("%d-%d学年", now.Year(), now.Year()+1)
-		created, createErr := h.masterData.CreateAcademicTerm(c.Request.Context(), h.orgID, masterdata.CreateAcademicTermParams{Name: termName, StartsOn: time.Date(now.Year(), 9, 1, 0, 0, 0, 0, time.UTC), EndsOn: time.Date(now.Year()+1, 8, 31, 0, 0, 0, 0, time.UTC), IsCurrent: true})
+		created, createErr := h.masterData.CreateAcademicTerm(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), masterdata.CreateAcademicTermParams{Name: termName, StartsOn: time.Date(now.Year(), 9, 1, 0, 0, 0, 0, time.UTC), EndsOn: time.Date(now.Year()+1, 8, 31, 0, 0, 0, 0, time.UTC), IsCurrent: true})
 		if createErr != nil && !errors.Is(createErr, masterdata.ErrConflict) {
 			return 0, createErr
 		}
@@ -969,21 +1197,21 @@ func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Prin
 	if className == "" {
 		className = defaultString(application.ClassNameInput, "待确认班级")
 	}
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return 0, err
 	}
 	for _, classItem := range classes {
 		if classItem.Status == "active" && classItem.SchoolID == schoolID && classItem.TermID == termID && normalizeGrade(classItem.Grade) == normalizeGrade(grade) && normalizeClassName(classItem.Name) == normalizeClassName(className) {
 			if principal.Role == identity.UserRoleTeacher && h.assignments != nil {
-				_, _ = h.assignments.Create(c.Request.Context(), h.orgID, assignment.CreateParams{TeacherUserID: principal.SubjectID, SchoolClassID: classItem.ID})
+				_, _ = h.assignments.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), assignment.CreateParams{TeacherUserID: principal.SubjectID, SchoolClassID: classItem.ID})
 			}
 			return classItem.ID, nil
 		}
 	}
-	created, err := h.masterData.CreateSchoolClass(c.Request.Context(), h.orgID, masterdata.CreateSchoolClassParams{SchoolID: schoolID, TermID: termID, Grade: grade, Name: className})
+	created, err := h.masterData.CreateSchoolClass(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), masterdata.CreateSchoolClassParams{SchoolID: schoolID, TermID: termID, Grade: grade, Name: className})
 	if errors.Is(err, masterdata.ErrConflict) {
-		classes, listErr := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+		classes, listErr := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if listErr != nil {
 			return 0, listErr
 		}
@@ -999,7 +1227,7 @@ func (h *Handler) ensureApplicationClass(c *gin.Context, principal identity.Prin
 		return 0, err
 	}
 	if principal.Role == identity.UserRoleTeacher && h.assignments != nil {
-		if _, assignmentErr := h.assignments.Create(c.Request.Context(), h.orgID, assignment.CreateParams{TeacherUserID: principal.SubjectID, SchoolClassID: created.ID}); assignmentErr != nil && !errors.Is(assignmentErr, assignment.ErrConflict) {
+		if _, assignmentErr := h.assignments.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), assignment.CreateParams{TeacherUserID: principal.SubjectID, SchoolClassID: created.ID}); assignmentErr != nil && !errors.Is(assignmentErr, assignment.ErrConflict) {
 			return 0, assignmentErr
 		}
 	}
@@ -1014,7 +1242,7 @@ func valueOrZero(value *uint64) uint64 {
 }
 
 func (h *Handler) createApplicationBinding(c *gin.Context, application ChildApplication, studentID uint64) error {
-	_, err := h.store.CreateBinding(c.Request.Context(), h.orgID, BindStudentParams{ParentAccountID: application.ParentAccountID, StudentID: studentID, Relationship: defaultString(application.Relationship, "家长"), IsPrimary: true})
+	_, err := h.store.CreateBinding(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), BindStudentParams{ParentAccountID: application.ParentAccountID, StudentID: studentID, Relationship: defaultString(application.Relationship, "家长"), IsPrimary: true})
 	if err != nil && !errors.Is(err, ErrConflict) {
 		h.respondStoreError(c, err)
 		return err
@@ -1023,7 +1251,7 @@ func (h *Handler) createApplicationBinding(c *gin.Context, application ChildAppl
 }
 
 func (h *Handler) resolveChildApplicationClass(c *gin.Context, req childApplicationRequest) (*uint64, *uint64, string, string, error) {
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return nil, nil, "", "", err
 	}
@@ -1047,7 +1275,7 @@ func (h *Handler) resolveChildApplicationClass(c *gin.Context, req childApplicat
 			className = parsedClass
 		}
 	}
-	schools, err := h.masterData.ListSchools(c.Request.Context(), h.orgID)
+	schools, err := h.masterData.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return nil, nil, grade, className, err
 	}
@@ -1086,7 +1314,7 @@ func (h *Handler) enrichChildApplicationView(c *gin.Context, item ChildApplicati
 	if view == nil || item.StudentID != nil || item.SchoolClassID == nil || h.masterData == nil {
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return
 	}
@@ -1119,7 +1347,7 @@ func (h *Handler) getMe(c *gin.Context) {
 	if !ok {
 		return
 	}
-	bindings, err := h.store.ListBindings(c.Request.Context(), h.orgID, account.ID)
+	bindings, err := h.store.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1137,7 +1365,7 @@ func (h *Handler) listStudents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	bindings, err := h.store.ListBindings(c.Request.Context(), h.orgID, account.ID)
+	bindings, err := h.store.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1164,7 +1392,7 @@ func (h *Handler) listStudentPickupEvents(c *gin.Context) {
 	}
 	// Store adapters use operation-scoped event queries; collect the student's events
 	// from today's and historical operations without exposing other students.
-	operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1197,7 +1425,7 @@ func (h *Handler) listStudentPickupEvents(c *gin.Context) {
 				continue
 			}
 		}
-		events, eventErr := h.pickup.ListEvents(c.Request.Context(), h.orgID, operation.ID)
+		events, eventErr := h.pickup.ListEvents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operation.ID)
 		if eventErr != nil {
 			h.respondPickupError(c, eventErr)
 			return
@@ -1230,7 +1458,7 @@ func (h *Handler) getStudentPickupToday(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "date", Reason: "date_format"}}))
 		return
 	}
-	operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1239,7 +1467,7 @@ func (h *Handler) getStudentPickupToday(c *gin.Context) {
 		if !sameDay(operation.OperationDate, date) {
 			continue
 		}
-		members, listErr := h.pickup.ListOperationStudents(c.Request.Context(), h.orgID, operation.ID)
+		members, listErr := h.pickup.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operation.ID)
 		if listErr != nil {
 			h.respondPickupError(c, listErr)
 			return
@@ -1264,7 +1492,7 @@ func (h *Handler) signedPhotoURL(value string) string {
 	if h.photoSigner == nil || strings.TrimSpace(value) == "" {
 		return value
 	}
-	return h.photoSigner.Sign(value, 15*time.Minute)
+	return h.photoSigner.Sign(value, h.photoURLTTL)
 }
 
 func (h *Handler) listNotifications(c *gin.Context) {
@@ -1272,7 +1500,7 @@ func (h *Handler) listNotifications(c *gin.Context) {
 	if !ok {
 		return
 	}
-	bindings, err := h.store.ListBindings(c.Request.Context(), h.orgID, account.ID)
+	bindings, err := h.store.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1281,7 +1509,7 @@ func (h *Handler) listNotifications(c *gin.Context) {
 	for _, item := range bindings {
 		allowed[item.StudentID] = struct{}{}
 	}
-	items, err := h.pickup.ListNotifications(c.Request.Context(), h.orgID)
+	items, err := h.pickup.ListNotifications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1364,7 +1592,7 @@ func (h *Handler) listSubscriptions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := h.store.ListMessageSubscriptions(c.Request.Context(), h.orgID, account.ID)
+	items, err := h.store.ListMessageSubscriptions(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1390,7 +1618,7 @@ func (h *Handler) updateSubscriptions(c *gin.Context) {
 	for _, item := range req.Subscriptions {
 		params = append(params, UpdateMessageSubscriptionParams{Kind: strings.TrimSpace(item.Kind), Status: strings.TrimSpace(item.Status), TemplateVersion: strings.TrimSpace(item.TemplateVersion)})
 	}
-	if err := h.store.UpdateMessageSubscriptions(c.Request.Context(), h.orgID, account.ID, params); err != nil {
+	if err := h.store.UpdateMessageSubscriptions(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID, params); err != nil {
 		h.respondStoreError(c, err)
 		return
 	}
@@ -1402,7 +1630,7 @@ func (h *Handler) getPrivacyConsent(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.store.GetLatestPrivacyConsent(c.Request.Context(), h.orgID, account.ID)
+	item, err := h.store.GetLatestPrivacyConsent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if errors.Is(err, ErrNotFound) {
 		response.OK(c, privacyConsentView{Accepted: false, CurrentPolicyVersion: PrivacyPolicyCurrentVersion, PolicyVersion: PrivacyPolicyCurrentVersion})
 		return
@@ -1429,7 +1657,7 @@ func (h *Handler) recordPrivacyConsent(c *gin.Context) {
 		response.Error(c, response.BadRequest("隐私协议版本已更新，请刷新后重新确认", nil))
 		return
 	}
-	item, err := h.store.RecordPrivacyConsent(c.Request.Context(), h.orgID, account.ID, RecordPrivacyConsentParams{PolicyVersion: req.PolicyVersion})
+	item, err := h.store.RecordPrivacyConsent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID, RecordPrivacyConsentParams{PolicyVersion: req.PolicyVersion})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1456,7 +1684,7 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 	if !ok {
 		return
 	}
-	bindings, err := h.store.ListBindings(c.Request.Context(), h.orgID, account.ID)
+	bindings, err := h.store.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1465,7 +1693,7 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 	for _, binding := range bindings {
 		allowed[binding.StudentID] = struct{}{}
 	}
-	notifications, err := h.pickup.ListNotifications(c.Request.Context(), h.orgID)
+	notifications, err := h.pickup.ListNotifications(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1481,7 +1709,7 @@ func (h *Handler) markNotificationRead(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	if err := h.pickup.MarkNotificationRead(c.Request.Context(), h.orgID, id); err != nil {
+	if err := h.pickup.MarkNotificationRead(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id); err != nil {
 		h.respondPickupError(c, err)
 		return
 	}
@@ -1493,7 +1721,7 @@ func (h *Handler) listParentLeaveRequests(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := h.store.ListLeaveRequests(c.Request.Context(), h.orgID, &account.ID)
+	items, err := h.store.ListLeaveRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &account.ID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1519,7 +1747,7 @@ func (h *Handler) createLeaveRequest(c *gin.Context) {
 		return
 	}
 	leaveDate, _ := parseDate(req.LeaveDate)
-	item, err := h.store.CreateLeaveRequest(c.Request.Context(), h.orgID, CreateLeaveRequestParams{StudentID: studentID, ParentAccountID: account.ID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
+	item, err := h.store.CreateLeaveRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateLeaveRequestParams{StudentID: studentID, ParentAccountID: account.ID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1543,7 +1771,7 @@ func (h *Handler) updateParentLeaveRequest(c *gin.Context) {
 		return
 	}
 	leaveDate, _ := parseDate(req.LeaveDate)
-	item, err := h.store.UpdateLeaveRequest(c.Request.Context(), h.orgID, UpdateLeaveRequestParams{ID: id, ParentAccountID: account.ID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
+	item, err := h.store.UpdateLeaveRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), UpdateLeaveRequestParams{ID: id, ParentAccountID: account.ID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1561,7 +1789,7 @@ func (h *Handler) cancelParentLeaveRequest(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.store.CancelLeaveRequest(c.Request.Context(), h.orgID, CancelLeaveRequestParams{ID: id, ParentAccountID: account.ID})
+	item, err := h.store.CancelLeaveRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CancelLeaveRequestParams{ID: id, ParentAccountID: account.ID})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1586,7 +1814,7 @@ func (h *Handler) createPickupChangeRequest(c *gin.Context) {
 	}
 	changeDate, _ := parseDate(req.ChangeDate)
 	var operationID *uint64
-	operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1595,7 +1823,7 @@ func (h *Handler) createPickupChangeRequest(c *gin.Context) {
 		if !sameDay(operation.OperationDate, changeDate) {
 			continue
 		}
-		members, membersErr := h.pickup.ListOperationStudents(c.Request.Context(), h.orgID, operation.ID)
+		members, membersErr := h.pickup.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), operation.ID)
 		if membersErr != nil {
 			h.respondPickupError(c, membersErr)
 			return
@@ -1611,7 +1839,7 @@ func (h *Handler) createPickupChangeRequest(c *gin.Context) {
 			break
 		}
 	}
-	item, err := h.pickup.CreatePickupChangeRequest(c.Request.Context(), h.orgID, pickup.CreatePickupChangeRequestParams{StudentID: studentID, OperationID: operationID, ChangeDate: changeDate, RequestedStatus: req.RequestedStatus, Note: strings.TrimSpace(req.Note), SubmittedBy: "parent"})
+	item, err := h.pickup.CreatePickupChangeRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreatePickupChangeRequestParams{StudentID: studentID, OperationID: operationID, ChangeDate: changeDate, RequestedStatus: req.RequestedStatus, Note: strings.TrimSpace(req.Note), SubmittedBy: "parent"})
 	if err != nil {
 		h.respondPickupError(c, err)
 		return
@@ -1653,7 +1881,7 @@ func (h *Handler) createTeacherLeaveRequest(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, req.StudentID)
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), req.StudentID)
 	if err != nil {
 		h.respondMasterError(c, err)
 		return
@@ -1667,7 +1895,7 @@ func (h *Handler) createTeacherLeaveRequest(c *gin.Context) {
 			response.Error(c, response.Internal(errors.New("教师班级权限未配置")))
 			return
 		}
-		assigned, listErr := h.assignments.List(c.Request.Context(), h.orgID, principal.SubjectID, student.SchoolClassID)
+		assigned, listErr := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, student.SchoolClassID)
 		if listErr != nil {
 			response.Error(c, response.Internal(listErr))
 			return
@@ -1690,7 +1918,7 @@ func (h *Handler) createTeacherLeaveRequest(c *gin.Context) {
 		return
 	}
 	leaveDate, _ := parseDate(req.LeaveDate)
-	item, err := writer.CreateTeacherLeaveRequest(c.Request.Context(), h.orgID, CreateTeacherLeaveRequestParams{StudentID: req.StudentID, SubmittedByUserID: principal.SubjectID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
+	item, err := writer.CreateTeacherLeaveRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateTeacherLeaveRequestParams{StudentID: req.StudentID, SubmittedByUserID: principal.SubjectID, LeaveDate: leaveDate, Reason: strings.TrimSpace(req.Reason)})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1700,7 +1928,7 @@ func (h *Handler) createTeacherLeaveRequest(c *gin.Context) {
 }
 
 func (h *Handler) listAllLeaveRequests(c *gin.Context) {
-	items, err := h.store.ListLeaveRequests(c.Request.Context(), h.orgID, nil)
+	items, err := h.store.ListLeaveRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1721,7 +1949,7 @@ func (h *Handler) reviewLeaveRequest(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.ReviewLeaveRequest(c.Request.Context(), h.orgID, ReviewLeaveRequestParams{ID: id, Status: req.Status, TeacherNote: strings.TrimSpace(req.TeacherNote), ReviewedByUserID: parseTeacherID(c)})
+	item, err := h.store.ReviewLeaveRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewLeaveRequestParams{ID: id, Status: req.Status, TeacherNote: strings.TrimSpace(req.TeacherNote), ReviewedByUserID: parseTeacherID(c)})
 	if err != nil {
 		h.respondStoreError(c, err)
 		return
@@ -1732,16 +1960,16 @@ func (h *Handler) reviewLeaveRequest(c *gin.Context) {
 }
 
 func (h *Handler) accountForOpenID(c *gin.Context, openID, nickname, avatar string) (Account, error) {
-	account, err := h.store.FindAccountByOpenID(c.Request.Context(), h.orgID, strings.TrimSpace(openID))
+	account, err := h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), strings.TrimSpace(openID))
 	if err == nil {
 		return account, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return Account{}, err
 	}
-	account, err = h.store.CreateAccount(c.Request.Context(), h.orgID, CreateAccountParams{OpenID: openID, Nickname: nickname, Avatar: avatar})
+	account, err = h.store.CreateAccount(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateAccountParams{OpenID: openID, Nickname: nickname, Avatar: avatar})
 	if errors.Is(err, ErrConflict) {
-		return h.store.FindAccountByOpenID(c.Request.Context(), h.orgID, strings.TrimSpace(openID))
+		return h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), strings.TrimSpace(openID))
 	}
 	return account, err
 }
@@ -1752,7 +1980,7 @@ func (h *Handler) currentAccount(c *gin.Context) (Account, bool) {
 			response.Error(c, response.Unauthorized())
 			return Account{}, false
 		}
-		account, err := h.store.FindAccountByID(c.Request.Context(), h.orgID, principal.SubjectID)
+		account, err := h.store.FindAccountByID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				response.Error(c, response.Unauthorized())
@@ -1769,7 +1997,7 @@ func (h *Handler) currentAccount(c *gin.Context) (Account, bool) {
 	}
 	openID := strings.TrimSpace(c.GetHeader(ParentOpenIDHeader))
 	if openID != "" {
-		account, err := h.store.FindAccountByOpenID(c.Request.Context(), h.orgID, openID)
+		account, err := h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), openID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				response.Error(c, response.Unauthorized())
@@ -1790,7 +2018,7 @@ func (h *Handler) currentAccount(c *gin.Context) (Account, bool) {
 			response.Error(c, response.BadRequest("家长身份不合法", err))
 			return Account{}, false
 		}
-		account, err := h.store.FindAccountByID(c.Request.Context(), h.orgID, id)
+		account, err := h.store.FindAccountByID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				response.Error(c, response.Unauthorized())
@@ -1810,7 +2038,7 @@ func (h *Handler) currentAccount(c *gin.Context) (Account, bool) {
 }
 
 func (h *Handler) isBound(c *gin.Context, parentID, studentID uint64) bool {
-	items, err := h.store.ListBindings(c.Request.Context(), h.orgID, parentID)
+	items, err := h.store.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), parentID)
 	if err != nil {
 		h.respondStoreError(c, err)
 		return false
@@ -1825,23 +2053,23 @@ func (h *Handler) isBound(c *gin.Context, parentID, studentID uint64) bool {
 }
 
 func (h *Handler) enrichBindings(c *gin.Context, items []Binding) {
-	schools, _ := h.masterData.ListSchools(c.Request.Context(), h.orgID)
+	schools, _ := h.masterData.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	schoolNames := make(map[uint64]string, len(schools))
 	for _, school := range schools {
 		schoolNames[school.ID] = school.Name
 	}
-	classes, _ := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, _ := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	classByID := make(map[uint64]masterdata.SchoolClass, len(classes))
 	for _, schoolClass := range classes {
 		classByID[schoolClass.ID] = schoolClass
 	}
-	careClasses, _ := h.masterData.ListCareClasses(c.Request.Context(), h.orgID)
+	careClasses, _ := h.masterData.ListCareClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	careClassNames := make(map[uint64]string, len(careClasses))
 	for _, careClass := range careClasses {
 		careClassNames[careClass.ID] = careClass.Name
 	}
 	for index := range items {
-		student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, items[index].StudentID)
+		student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), items[index].StudentID)
 		if err != nil {
 			continue
 		}
@@ -1866,7 +2094,7 @@ type schoolClassDisplay struct {
 }
 
 func (h *Handler) schoolClassDisplay(c *gin.Context, schoolClassID uint64) schoolClassDisplay {
-	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return schoolClassDisplay{}
 	}
@@ -1874,7 +2102,7 @@ func (h *Handler) schoolClassDisplay(c *gin.Context, schoolClassID uint64) schoo
 		if schoolClass.ID != schoolClassID {
 			continue
 		}
-		schools, schoolErr := h.masterData.ListSchools(c.Request.Context(), h.orgID)
+		schools, schoolErr := h.masterData.ListSchools(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		if schoolErr != nil {
 			return schoolClassDisplay{grade: schoolClass.Grade, className: schoolClass.Name}
 		}
@@ -2026,6 +2254,55 @@ func defaultString(value, fallback string) string {
 	}
 	return strings.TrimSpace(value)
 }
+
+func normalizeLoginPhone(value string) string {
+	value = strings.TrimSpace(value)
+	var builder strings.Builder
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			builder.WriteRune(char)
+		}
+	}
+	normalized := builder.String()
+	if len(normalized) < 7 || len(normalized) > 32 {
+		return ""
+	}
+	return normalized
+}
+
+func maskPhone(value string) string {
+	phone := normalizeLoginPhone(value)
+	if len(phone) <= 4 {
+		return phone
+	}
+	prefixLength := 3
+	if len(phone) < 7 {
+		prefixLength = 1
+	}
+	return phone[:prefixLength] + "****" + phone[len(phone)-4:]
+}
+
+func maskPhoneSuffix(value string) string {
+	phone := normalizeLoginPhone(value)
+	if len(phone) <= 4 {
+		return phone
+	}
+	return phone[len(phone)-4:]
+}
+
+func staffLoginLabel(role identity.UserRole) string {
+	switch role {
+	case identity.UserRoleAdmin:
+		return "管理员入口"
+	case identity.UserRoleEditor:
+		return "校长 / 管理入口"
+	case identity.UserRoleViewer:
+		return "查看账号入口"
+	default:
+		return "老师 / 校长入口"
+	}
+}
+
 func parseTeacherID(c *gin.Context) uint64 {
 	if principal, ok := identity.PrincipalFromContext(c.Request.Context()); ok && principal.Kind == identity.PrincipalKindUser {
 		return principal.SubjectID
@@ -2097,6 +2374,6 @@ func (h *Handler) notifyLeaveStatus(c *gin.Context, item LeaveRequest) error {
 	if strings.TrimSpace(item.TeacherNote) != "" {
 		content += "；老师备注：" + strings.TrimSpace(item.TeacherNote)
 	}
-	_, err := h.pickup.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: item.StudentID, Kind: "leave_review", Title: title, Content: content})
+	_, err := h.pickup.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: item.StudentID, Kind: "leave_review", Title: title, Content: content})
 	return err
 }

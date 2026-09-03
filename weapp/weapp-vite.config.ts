@@ -34,6 +34,11 @@ export default defineConfig({
     autoImportComponents: {
       resolvers: [TDesignResolver()],
     },
+    appPrelude: {
+      enabled: true,
+      mode: 'require',
+      webRuntime: false,
+    },
     // Generated file format for pnpm g.
     // https://vite.icebreaker.top/guide/generate.html
     generate: {

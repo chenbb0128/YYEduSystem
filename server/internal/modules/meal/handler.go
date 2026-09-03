@@ -31,6 +31,7 @@ type Handler struct {
 	assignments        assignment.Store
 	photos             storage.Store
 	photoSigner        *storage.URLSigner
+	photoURLTTL        time.Duration
 	assets             mediamodule.Store
 	assetRetentionDays int
 	audit              auditmodule.Writer
@@ -38,19 +39,24 @@ type Handler struct {
 }
 
 func NewHandler(store Store, masterData masterdata.Store) *Handler {
-	return &Handler{store: store, masterData: masterData, orgID: masterdata.DefaultOrganizationID}
+	return &Handler{store: store, masterData: masterData, photoURLTTL: 15 * time.Minute, orgID: masterdata.DefaultOrganizationID}
 }
 func (h *Handler) SetParentStore(value parent.Store)                     { h.parents = value }
 func (h *Handler) SetNotificationWriter(value pickup.NotificationWriter) { h.notifications = value }
 func (h *Handler) SetStaffScope(value assignment.Store)                  { h.assignments = value }
 func (h *Handler) SetPhotoStore(value storage.Store)                     { h.photos = value }
 func (h *Handler) SetPhotoSigner(value *storage.URLSigner)               { h.photoSigner = value }
-func (h *Handler) SetAssetStore(value mediamodule.Store)                 { h.assets = value }
-func (h *Handler) SetAssetRetentionDays(days int)                        { h.assetRetentionDays = days }
-func (h *Handler) SetAuditWriter(value auditmodule.Writer)               { h.audit = value }
+func (h *Handler) SetPhotoURLTTL(ttl time.Duration) {
+	if ttl > 0 {
+		h.photoURLTTL = ttl
+	}
+}
+func (h *Handler) SetAssetStore(value mediamodule.Store)   { h.assets = value }
+func (h *Handler) SetAssetRetentionDays(days int)          { h.assetRetentionDays = days }
+func (h *Handler) SetAuditWriter(value auditmodule.Writer) { h.audit = value }
 
 func (h *Handler) recordAudit(c *gin.Context, action, resourceType string, resourceID uint64) {
-	auditmodule.RecordForContext(c.Request.Context(), h.audit, h.orgID, action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
+	auditmodule.RecordForContext(c.Request.Context(), h.audit, identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
 }
 
 func (h *Handler) RegisterStaffRoutes(api *gin.RouterGroup) {
@@ -175,7 +181,7 @@ func (h *Handler) listPlans(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "date", Reason: "date_format"}}))
 		return
 	}
-	items, err := h.store.ListPlans(c.Request.Context(), h.orgID, from, to)
+	items, err := h.store.ListPlans(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), from, to)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -211,7 +217,7 @@ func (h *Handler) listParentPlans(c *gin.Context) {
 		now := time.Now().UTC()
 		from, to = &now, &now
 	}
-	items, err := h.store.ListPlans(c.Request.Context(), h.orgID, from, to)
+	items, err := h.store.ListPlans(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), from, to)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -237,7 +243,7 @@ func (h *Handler) upsertPlan(c *gin.Context) {
 	date, _ := parseDate(req.MealDate)
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
 	userID := principal.SubjectID
-	item, err := h.store.UpsertPlan(c.Request.Context(), h.orgID, UpsertPlanParams{MealDate: date, MenuText: req.MenuText, PhotoURL: req.PhotoURL, AdjustmentNote: req.AdjustmentNote, CreatedByUserID: &userID, CreatedByName: staffName(principal)})
+	item, err := h.store.UpsertPlan(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), UpsertPlanParams{MealDate: date, MenuText: req.MenuText, PhotoURL: req.PhotoURL, AdjustmentNote: req.AdjustmentNote, CreatedByUserID: &userID, CreatedByName: staffName(principal)})
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -259,7 +265,7 @@ func (h *Handler) copyPlan(c *gin.Context) {
 	target, _ := parseDate(req.TargetDate)
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
 	uid := principal.SubjectID
-	item, err := h.store.CopyPlan(c.Request.Context(), h.orgID, CopyPlanParams{SourceDate: source, TargetDate: target, CreatedByUserID: &uid, CreatedByName: staffName(principal)})
+	item, err := h.store.CopyPlan(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CopyPlanParams{SourceDate: source, TargetDate: target, CreatedByUserID: &uid, CreatedByName: staffName(principal)})
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -337,7 +343,7 @@ func (h *Handler) recordAsset(c *gin.Context, asset storage.Asset, resourceType 
 		value := time.Now().UTC().AddDate(0, 0, h.assetRetentionDays)
 		retentionUntil = &value
 	}
-	_, err := h.assets.Create(c.Request.Context(), h.orgID, mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
+	_, err := h.assets.Create(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), mediamodule.CreateParams{ObjectKey: key, ResourceType: resourceType, ResourceID: resourceID, OwnerType: ownerType, OwnerID: ownerID, ContentType: asset.ContentType, SizeBytes: asset.Size, SHA256: asset.SHA256, RetentionUntil: retentionUntil, CreatedByUserID: ownerID})
 	return err
 }
 
@@ -356,7 +362,7 @@ func (h *Handler) listDietNotes(c *gin.Context) {
 		response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "student_id", Reason: "invalid_value"}}))
 		return
 	}
-	items, err := h.store.ListDietNotes(c.Request.Context(), h.orgID, studentID)
+	items, err := h.store.ListDietNotes(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -379,7 +385,7 @@ func (h *Handler) getParentDietNote(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	items, err := h.store.ListDietNotes(c.Request.Context(), h.orgID, &studentID)
+	items, err := h.store.ListDietNotes(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &studentID)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -397,7 +403,7 @@ func (h *Handler) listParentDietNoteChangeRequests(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), h.orgID, &studentID, nil)
+	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &studentID, nil)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -425,7 +431,7 @@ func (h *Handler) parentCreateDietNoteChangeRequest(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.CreateDietNoteChangeRequest(c.Request.Context(), h.orgID, CreateDietNoteChangeRequestParams{StudentID: studentID, ParentAccountID: principal.SubjectID, RequestedNote: req.Note})
+	item, err := h.store.CreateDietNoteChangeRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateDietNoteChangeRequestParams{StudentID: studentID, ParentAccountID: principal.SubjectID, RequestedNote: req.Note})
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -448,7 +454,7 @@ func (h *Handler) listDietNoteChangeRequests(c *gin.Context) {
 		}
 		status = &value
 	}
-	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), h.orgID, studentID, status)
+	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID, status)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -471,7 +477,7 @@ func (h *Handler) reviewDietNoteChangeRequest(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), h.orgID, nil, nil)
+	items, err := h.store.ListDietNoteChangeRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil, nil)
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -498,7 +504,7 @@ func (h *Handler) reviewDietNoteChangeRequest(c *gin.Context) {
 		return
 	}
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
-	item, err := h.store.ReviewDietNoteChangeRequest(c.Request.Context(), h.orgID, ReviewDietNoteChangeRequestParams{ID: id, Status: req.Status, ReviewNote: req.ReviewNote, ReviewedByUserID: principal.SubjectID})
+	item, err := h.store.ReviewDietNoteChangeRequest(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewDietNoteChangeRequestParams{ID: id, Status: req.Status, ReviewNote: req.ReviewNote, ReviewedByUserID: principal.SubjectID})
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -526,7 +532,7 @@ func (h *Handler) upsertDietNote(c *gin.Context) {
 	}
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
 	uid := principal.SubjectID
-	item, err := h.store.UpsertDietNote(c.Request.Context(), h.orgID, UpsertDietNoteParams{StudentID: studentID, Note: req.Note, UpdatedByUserID: &uid, UpdatedByName: staffName(principal)})
+	item, err := h.store.UpsertDietNote(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), UpsertDietNoteParams{StudentID: studentID, Note: req.Note, UpdatedByUserID: &uid, UpdatedByName: staffName(principal)})
 	if err != nil {
 		h.respondError(c, err)
 		return
@@ -550,14 +556,14 @@ func (h *Handler) notifyDietNoteChange(c *gin.Context, item DietNoteChangeReques
 	if item.ReviewNote != "" {
 		content += "：" + item.ReviewNote
 	}
-	_, _ = h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: item.StudentID, Kind: "meal_diet_note_review", Title: title, Content: content})
+	_, _ = h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: item.StudentID, Kind: "meal_diet_note_review", Title: title, Content: content})
 }
 
 func (h *Handler) notifyMeal(c *gin.Context, item Plan) {
 	if h.notifications == nil || h.masterData == nil {
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return
 	}
@@ -567,7 +573,7 @@ func (h *Handler) notifyMeal(c *gin.Context, item Plan) {
 	}
 	for _, student := range students {
 		if student.Status == "active" {
-			_, _ = h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.ID, Kind: "meal_updated", Title: "餐食安排已更新", Content: content})
+			_, _ = h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.ID, Kind: "meal_updated", Title: "餐食安排已更新", Content: content})
 		}
 	}
 }
@@ -576,7 +582,7 @@ func (h *Handler) parentOwnsStudent(c *gin.Context, studentID uint64) bool {
 	if !ok || p.Kind != identity.PrincipalKindParent || h.parents == nil {
 		return false
 	}
-	items, err := h.parents.ListBindings(c.Request.Context(), h.orgID, p.SubjectID)
+	items, err := h.parents.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), p.SubjectID)
 	if err != nil {
 		return false
 	}
@@ -598,11 +604,11 @@ func (h *Handler) staffStudentAllowed(c *gin.Context, studentID uint64) bool {
 	if h.assignments == nil {
 		return false
 	}
-	student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, studentID)
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), studentID)
 	if err != nil {
 		return false
 	}
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, p.SubjectID, student.SchoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), p.SubjectID, student.SchoolClassID)
 	return err == nil && item.Status == assignment.AssignmentStatusActive
 }
 func canWrite(c *gin.Context) bool {
@@ -637,7 +643,7 @@ func (h *Handler) signedPhotoURL(value string) string {
 	if h.photoSigner == nil || strings.TrimSpace(value) == "" {
 		return value
 	}
-	return h.photoSigner.Sign(value, 15*time.Minute)
+	return h.photoSigner.Sign(value, h.photoURLTTL)
 }
 func parseDate(v string) (time.Time, error) {
 	return time.ParseInLocation("2006-01-02", strings.TrimSpace(v), time.UTC)

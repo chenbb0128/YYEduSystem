@@ -41,7 +41,8 @@ services:
         TARGET: migrate
     command: ["-command", "up"]
     environment:
-      TUOGUAN_SYSTEM_DATABASE_ENABLED: "false"
+      TUOGUAN_SYSTEM_APP_ENV: local
+      TUOGUAN_SYSTEM_DATABASE_ENABLED: "true"
       TUOGUAN_SYSTEM_DATABASE_DSN: tuoguan_system:tuoguan_system_pass@tcp(mysql:3306)/tuoguan_system
     depends_on:
       mysql:
@@ -55,6 +56,8 @@ services:
       args:
         TARGET: api
     environment:
+      TZ: Asia/Shanghai
+      TUOGUAN_SYSTEM_APP_ENV: local
       TUOGUAN_SYSTEM_HTTP_ADDR: :8080
       TUOGUAN_SYSTEM_DATABASE_ENABLED: "true"
       TUOGUAN_SYSTEM_DATABASE_DSN: tuoguan_system:tuoguan_system_pass@tcp(mysql:3306)/tuoguan_system
@@ -84,6 +87,8 @@ services:
       args:
         TARGET: worker
     environment:
+      TZ: Asia/Shanghai
+      TUOGUAN_SYSTEM_APP_ENV: local
       TUOGUAN_SYSTEM_DATABASE_ENABLED: "true"
       TUOGUAN_SYSTEM_DATABASE_DSN: tuoguan_system:tuoguan_system_pass@tcp(mysql:3306)/tuoguan_system
       TUOGUAN_SYSTEM_REDIS_ENABLED: "true"
@@ -93,8 +98,12 @@ services:
       TUOGUAN_SYSTEM_WORKER_CONCURRENCY: "10"
       TUOGUAN_SYSTEM_OBSERVABILITY_TRACING_ENABLED: "false"
     depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   mysql_data:

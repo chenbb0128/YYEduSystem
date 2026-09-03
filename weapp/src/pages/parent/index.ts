@@ -3,6 +3,7 @@ import type { DietNoteChangeRequest, MealPlan } from '@/services/meal'
 import type { LeaveRequest, ParentChild, ParentHomework, ParentMe, ParentNotification, ParentPickupEvent, ParentPickupToday } from '@/services/parent'
 import type { MessageSubscription, MessageSubscriptionKind } from '@/services/subscriptions'
 import type { DailySummary } from '@/services/summary'
+import { getStoredPhoneLoginPhone } from '@/services/auth'
 import { createParentChildApplication, getParentChildApplications, updateParentChildApplication } from '@/services/child-applications'
 import { createParentDietNoteChangeRequest, getParentDietNote, getParentDietNoteChangeRequests, getParentMealHistory, getParentMeals, mealPhotoURL } from '@/services/meal'
 import { cancelParentLeaveRequest, createParentLeaveRequest, createParentPickupChange, getParentHomework, getParentLeaveRequests, getParentMe, getParentNotifications, getParentPickupEvents, getParentPickupToday, leaveStatusLabel, markParentNotificationRead, parentPhotoURL, updateParentLeaveRequest } from '@/services/parent'
@@ -139,6 +140,7 @@ function toSubscriptionView(item: MessageSubscription): ParentSubscriptionView {
 
 Page({
   data: {
+    contentReady: false,
     activeTab: 'home' as ParentTab,
     loading: false,
     bound: false,
@@ -194,7 +196,10 @@ Page({
   },
   onLoad(options: Record<string, string | undefined> = {}) {
     const invitedSchoolClassID = Number(options.schoolClassId || 0)
-    this.setData({ invitedSchoolClassID: Number.isFinite(invitedSchoolClassID) ? invitedSchoolClassID : 0 })
+    this.setData({
+      invitedSchoolClassID: Number.isFinite(invitedSchoolClassID) ? invitedSchoolClassID : 0,
+      guardianPhone: getStoredPhoneLoginPhone(),
+    })
     void this.loadParentData()
   },
   onShow() {
@@ -209,6 +214,12 @@ Page({
         return
       }
       const me = await getParentMe()
+      if (!(me.children || []).length) {
+        this.clearParentContent()
+        this.setData({ contentReady: false, loading: false })
+        this.openAddChildPage(true)
+        return
+      }
       await this.applyParentMe(me)
     }
     catch (error) {
@@ -253,7 +264,12 @@ Page({
       this.setData({ privacyConsentVisible: !result.accepted, privacyPolicyVersion: result.current_policy_version || result.policy_version, privacyConsentError: '' })
       return result.accepted
     }
-    catch {
+    catch (error) {
+      // 登录状态失效时不能把家长困在隐私弹窗中，应回到登录入口重新建立会话。
+      if (isRequestError(error) && error.code === 'UNAUTHORIZED') {
+        this.handleAuthExpired()
+        return false
+      }
       // 隐私状态无法确认时保持遮罩，避免在合规状态未知时继续查看儿童信息。
       this.setData({ privacyConsentVisible: true, privacyConsentError: '隐私说明暂时无法加载，确认成功前不能查看孩子动态。' })
       return false
@@ -263,7 +279,13 @@ Page({
     }
   },
   async handleRetryPrivacyConsent() {
+    if (this.data.privacyConsentLoading) {
+      return
+    }
     await this.loadPrivacyConsent()
+  },
+  handlePrivacyBackToLogin() {
+    this.handleAuthExpired()
   },
   async handleAcceptPrivacyConsent() {
     if (this.data.privacyConsentLoading || !this.data.privacyPolicyVersion) {
@@ -287,7 +309,7 @@ Page({
     const children = me.children || []
     const selectedStudentID = this.data.selectedStudentID && children.some(item => item.student_id === this.data.selectedStudentID) ? this.data.selectedStudentID : (children[0]?.student_id || 0)
     const selectedChild = children.find(item => item.student_id === selectedStudentID)
-    this.setData({ bound: children.length > 0, children, selectedStudentID, selectedStudentName: selectedChild?.student_name || '', selectedStudentClassLabel: childClassLabel(selectedChild) })
+    this.setData({ bound: children.length > 0, children, selectedStudentID, selectedStudentName: selectedChild?.student_name || '', selectedStudentClassLabel: childClassLabel(selectedChild), contentReady: true })
     if (!selectedStudentID) {
       this.setData({ events: [], notifications: [], notificationUnreadCount: 0, notificationNextCursor: 0, notificationHasMore: false, homework: [], leaves: [], pickupToday: null, meals: [], tomorrowMeals: [], mealHistory: [], dietNote: '', dietNoteRequests: [], dailySummary: null, dailySummaryChildUpdate: '', dynamicLoadNotice: '' })
       return
@@ -322,8 +344,32 @@ Page({
   },
   handleTabChange(event: WechatMiniprogram.TouchEvent) {
     const tab = event.currentTarget.dataset.tab as ParentTab
+    if (tab === 'apply') {
+      this.openAddChildPage()
+      return
+    }
     if (['home', 'dynamic', 'apply', 'mine'].includes(tab)) {
       this.setData({ activeTab: tab })
+    }
+  },
+  openAddChildPage(replace = false) {
+    if (typeof wx === 'undefined') {
+      this.setData({ activeTab: 'apply', contentReady: true })
+      return
+    }
+    const payload = {
+      url: '/pages/parent-apply/index',
+      fail: () => this.setData({ activeTab: 'apply', contentReady: true }),
+    }
+    if (replace) {
+      wx.redirectTo(payload)
+      return
+    }
+    wx.navigateTo(payload)
+  },
+  handleBackToIdentity() {
+    if (typeof wx !== 'undefined') {
+      wx.reLaunch({ url: '/pages/index/index' })
     }
   },
   handleFocus(event: WechatMiniprogram.InputFocus) {
@@ -349,8 +395,8 @@ Page({
       && this.data.classText.trim() === this.data.editingOriginalClassText,
     )
     const schoolClassID = this.data.invitedSchoolClassID || (retainsExistingClass ? this.data.editingSchoolClassID : 0)
-    if (!schoolClassID && (!this.data.schoolName.trim() || !this.data.classText.trim())) {
-      this.showToast('请填写学校和年级班级，或通过老师邀请链接进入')
+    if (!schoolClassID && !this.data.classText.trim()) {
+      this.showToast('请填写孩子年级')
       return
     }
     this.setData({ loading: true })
@@ -358,7 +404,7 @@ Page({
       const payload = {
         student_name: childName,
         school_name: this.data.schoolName.trim(),
-        class_text: this.data.classText.trim(),
+        grade: this.data.classText.trim(),
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
         guardian_name: this.data.guardianName.trim(),
         guardian_phone: guardianPhone,
@@ -372,7 +418,7 @@ Page({
         await createParentChildApplication(payload)
       }
       this.showToast(this.data.editingApplicationID ? '补充资料已提交，等待老师审核' : '申请已提交，等待老师审核')
-      this.setData({ editingApplicationID: 0, editingSchoolClassID: 0, editingOriginalSchoolName: '', editingOriginalClassText: '', childName: '', schoolName: '', classText: '', guardianName: '', guardianPhone: '', relationship: '', applicationNotes: '', focusedField: '' })
+      this.setData({ editingApplicationID: 0, editingSchoolClassID: 0, editingOriginalSchoolName: '', editingOriginalClassText: '', childName: '', schoolName: '', classText: '', guardianName: '', guardianPhone: getStoredPhoneLoginPhone(), relationship: '', applicationNotes: '', focusedField: '' })
       await this.loadParentData()
     }
     catch (error) {
@@ -397,9 +443,9 @@ Page({
       editingSchoolClassID: application.school_class_id || 0,
       childName: application.student_name,
       schoolName: application.school_name_input,
-      classText: [application.grade_input, application.class_name_input].filter(Boolean).join('') || application.grade || application.class_name,
+      classText: application.grade_input || application.grade || [application.grade_input, application.class_name_input].filter(Boolean).join('') || application.class_name,
       guardianName: application.guardian_name,
-      guardianPhone: application.guardian_phone,
+      guardianPhone: application.guardian_phone || getStoredPhoneLoginPhone(),
       relationship: application.relationship || '',
       applicationNotes: application.notes,
       editingOriginalSchoolName: application.school_name_input,

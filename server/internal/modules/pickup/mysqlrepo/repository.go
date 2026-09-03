@@ -55,7 +55,7 @@ func (r *Repository) CreateOperation(ctx context.Context, orgID uint64, params p
 	}
 	var operationID uint64
 	err := r.withTransaction(ctx, func(q *sqlc.Queries) error {
-		result, err := q.CreatePickupOperation(ctx, sqlc.CreatePickupOperationParams{OrganizationID: orgID, OperationDate: params.OperationDate, PickupMode: params.PickupMode, SchoolID: params.SchoolID, SchoolClassID: params.SchoolClassID, CareClassID: nullID(params.CareClassID), TeacherUserID: nullID(params.TeacherUserID), TeacherName: params.TeacherName, Notes: params.Notes})
+		result, err := q.CreatePickupOperation(ctx, sqlc.CreatePickupOperationParams{OrganizationID: orgID, OperationDate: params.OperationDate, PickupMode: params.PickupMode, SchoolID: params.SchoolID, SchoolClassID: params.SchoolClassID, CareClassID: nullID(params.CareClassID), TeacherUserID: nullID(params.TeacherUserID), TeacherName: params.TeacherName, ExpectedPickupTime: strings.TrimSpace(params.ExpectedPickupTime), Notes: params.Notes})
 		if err != nil {
 			return translateError(err)
 		}

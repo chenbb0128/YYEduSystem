@@ -60,15 +60,15 @@ const filters = reactive({
 const reviewForm = reactive<{
   create_school_class: boolean;
   review_note: string;
-  school_class_id: number;
+  school_class_id?: number;
   status: ReviewStatus;
-  student_id: number;
+  student_id?: number;
 }>({
   create_school_class: false,
   review_note: '',
-  school_class_id: 0,
+  school_class_id: undefined,
   status: 'approved',
-  student_id: 0,
+  student_id: undefined,
 });
 
 const currentRole = computed(() => userStore.userInfo?.roles?.[0] || '');
@@ -221,9 +221,9 @@ async function loadData() {
 function openReview(application: ChildApplicationRecord) {
   selectedApplication.value = application;
   reviewForm.status = 'approved';
-  reviewForm.school_class_id = application.school_class_id || 0;
-  reviewForm.student_id = application.student_id || 0;
-  reviewForm.create_school_class = false;
+  reviewForm.school_class_id = application.school_class_id || undefined;
+  reviewForm.student_id = application.student_id || undefined;
+  reviewForm.create_school_class = !application.school_class_id;
   reviewForm.review_note = application.review_note || '';
   dialogVisible.value = true;
 }
@@ -233,8 +233,22 @@ function closeReview() {
   selectedApplication.value = null;
 }
 
+async function refreshApplicationBeforeReview(applicationID: number) {
+  const latestPage = await getChildApplicationsApi();
+  applications.value = latestPage.items;
+  return latestPage.items.find((item) => item.id === applicationID);
+}
+
+function isNotFoundError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const response = Reflect.get(error, 'response') as
+    | undefined
+    | { data?: { message?: string }; status?: number };
+  return response?.status === 404 || response?.data?.message === '资源不存在';
+}
+
 async function submitReview() {
-  const application = selectedApplication.value;
+  let application = selectedApplication.value;
   if (!application) return;
 
   if (
@@ -242,7 +256,7 @@ async function submitReview() {
     !reviewForm.school_class_id &&
     !reviewForm.create_school_class
   ) {
-    ElMessage.warning('请先选择孩子所在的学校班级，或勾选自动创建班级。');
+    ElMessage.warning('请先选择孩子所在的托管班班级，或勾选自动创建班级。');
     return;
   }
   if (
@@ -271,6 +285,24 @@ async function submitReview() {
 
   submitting.value = true;
   try {
+    const latestApplication = await refreshApplicationBeforeReview(
+      application.id,
+    );
+    if (!latestApplication) {
+      closeReview();
+      ElMessage.warning(
+        '这条申请已不存在，已为你刷新列表。请让家长重新提交后再审核。',
+      );
+      return;
+    }
+    if (!isActionable(latestApplication.status)) {
+      closeReview();
+      ElMessage.info('这条申请已经处理过，列表已更新。');
+      return;
+    }
+    application = latestApplication;
+    selectedApplication.value = latestApplication;
+
     const payload: ReviewChildApplicationPayload = {
       review_note: reviewForm.review_note.trim() || undefined,
       status: reviewForm.status,
@@ -289,6 +321,18 @@ async function submitReview() {
     ElMessage.success(`已${actionLabel}家长入班申请`);
     closeReview();
     await loadData();
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      closeReview();
+      await loadData();
+      ElMessage.warning(
+        '这条申请已不存在，已为你刷新列表。请让家长重新提交后再审核。',
+      );
+      return;
+    }
+    ElMessage.error(
+      error instanceof Error ? error.message : '家长入班申请审核失败',
+    );
   } finally {
     submitting.value = false;
   }
@@ -304,7 +348,7 @@ onMounted(loadData);
         <p class="sprout-page-kicker">家校协同 · 入班审核</p>
         <h1 class="sprout-page-title">家长入班申请</h1>
         <p class="sprout-page-description">
-          核对孩子、班级和监护人信息后再通过申请，审核结果会同步到家长端。
+          核对孩子、托管班级和监护人信息后再通过申请，审核结果会同步到家长端。
         </p>
       </div>
       <div class="sprout-header-actions">
@@ -321,7 +365,7 @@ onMounted(loadData);
           <span class="child-application-lead-kicker">今日入班队列</span>
           <h2>先核对信息，再让孩子入班</h2>
           <p>
-            把家长提交的学校、班级和监护人信息确认清楚，后续接送和作业才会准确同步。
+            把家长提交的孩子信息和托管班班级确认清楚，后续接送和作业才会准确同步。
           </p>
         </div>
         <div class="child-application-lead-footer">
@@ -423,7 +467,7 @@ onMounted(loadData);
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="所在班级" min-width="210">
+          <ElTableColumn label="托管班班级" min-width="210">
             <template #default="{ row }">
               <div class="child-application-class">
                 <strong>{{
@@ -564,14 +608,14 @@ onMounted(loadData);
 
           <ElFormItem
             v-if="reviewForm.status === 'approved'"
-            label="归属学校班级"
+            label="托管班班级"
             required
           >
             <ElSelect
               v-model="reviewForm.school_class_id"
               class="w-full"
               clearable
-              placeholder="请选择孩子所在班级"
+              placeholder="请选择孩子所在托管班班级"
             >
               <ElOption
                 v-for="schoolClass in activeSchoolClasses"
@@ -581,7 +625,7 @@ onMounted(loadData);
               />
             </ElSelect>
             <p class="child-application-form-hint">
-              当前申请班级：{{
+              当前申请托管班级：{{
                 schoolClassLabel(selectedApplication.school_class_id)
               }}
             </p>
@@ -594,7 +638,7 @@ onMounted(loadData);
             "
           >
             <ElCheckbox v-model="reviewForm.create_school_class">
-              没有匹配班级时，按申请信息自动创建班级
+              没有匹配托管班班级时，按申请信息自动创建班级
             </ElCheckbox>
           </ElFormItem>
 
@@ -631,7 +675,7 @@ onMounted(loadData);
             "
             :closable="false"
             show-icon
-            title="当前没有可选择的负责班级，请勾选自动创建班级，或让管理员先维护班级。"
+            title="当前没有可选择的托管班班级，请勾选自动创建班级，或让管理员先维护班级。"
             type="warning"
           />
 

@@ -1,5 +1,5 @@
 {
-  "description": "星芽托管助手微信小程序配置文件",
+  "description": "豆芽成长助手微信小程序配置文件",
   "miniprogramRoot": "dist/",
   "compileType": "miniprogram",
   "setting": {
@@ -9,6 +9,7 @@
       "outputPath": ""
     },
     "coverView": false,
+    "urlCheck": false,
     "postcss": false,
     "minified": false,
     "enhance": true,
@@ -46,7 +47,24 @@
   },
   "libVersion": "3.15.0",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "dist/web"
+      },
+      {
+        "type": "folder",
+        "value": "web"
+      },
+      {
+        "type": "file",
+        "value": "dist/index.html"
+      },
+      {
+        "type": "file",
+        "value": "dist/index.js"
+      }
+    ],
     "include": []
   },
   "appid": "wxa40eeaf7993dc727",

@@ -92,7 +92,7 @@ Go 工具通过 `go.mod` 的 `tool` 指令固定：
 
 5. 按业务方案继续扩展模块。
 
-当前基础档案、接送和家长接口使用默认组织（ID 为 1）。本地无 MySQL 时默认管理员为 `admin / 123456`，首次启动后请立即修改或停用该密码。微信未配置时只允许 local/dev/test 环境使用开发降级 code，生产环境需要配置 `wechat.app_id`、`wechat.app_secret` 并通过 `code2Session` 换取 OpenID。
+当前基础档案、接送和家长接口使用默认组织（ID 为 1）。本地无 MySQL 时默认管理员为 `admin / 123456`，首次启动后请立即修改或停用该密码。手机号验证码在 local/dev/test 环境默认使用随机本地测试码（接口响应的 `debug_code` 仅用于本地开发），不会再接受固定验证码；生产环境需配置腾讯云短信并设置 `sms.enabled=true`、`sms.provider=tencent`，或使用微信登录。
 
 ## 目录结构
 
@@ -151,6 +151,9 @@ curl -X POST -H "Content-Type: application/json" -d '{"username":"admin","passwo
 curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v1/summary
 curl -H "Authorization: Bearer <token>" "http://localhost:8080/api/v1/pickup-operations?date=2026-09-01"
 curl -X POST -H "Content-Type: application/json" -d '{"code":"local-parent-demo"}' http://localhost:8080/api/v1/auth/parent/wechat
+# 本地手机号验证码：先请求验证码，从响应 data.debug_code 读取随机测试码，再调用 phone-login
+curl -X POST -H "Content-Type: application/json" -d '{"phone":"13800000000"}' http://localhost:8080/api/v1/auth/phone-code
+curl -X POST -H "Content-Type: application/json" -d '{"phone":"13800000000","code":"<debug_code>"}' http://localhost:8080/api/v1/auth/phone-login
 ```
 
 未启用 MySQL 时，档案、接送任务、事件和通知都保存在内存中，服务重启后会清空；上传照片写入 `storage.upload_dir`（默认 `data/uploads`），Compose 使用独立卷持久化。
@@ -310,6 +313,8 @@ configs/config.local.yaml
 | POST | `/api/v1/students/profile` | 通过名称填写学生档案并自动创建/复用分类 |
 | PUT | `/api/v1/students/:id/profile` | 通过名称编辑学生档案并自动归类 |
 | GET/POST | `/api/v1/pickup-operations` | 查询/创建每日接送任务 |
+| GET/POST/PUT | `/api/v1/pickup-schedules` | 查询、新增、编辑周期接送排班 |
+| POST | `/api/v1/pickup-schedules/generate` | 按排班生成当天待确认任务 |
 | GET | `/api/v1/pickup-operations/:id/students` | 查询接送名单 |
 | POST | `/api/v1/pickup-operations/:id/start` | 开始接送任务 |
 | POST | `/api/v1/pickup-operations/:id/finish` | 完成接送任务 |
@@ -342,13 +347,20 @@ configs/config.local.yaml
 典型流程如下：
 
 1. 工作人员直接在学生档案中填写学校、年级、班级和可选托管班，系统自动复用或创建分类；管理端不再要求先逐项维护分类。
-2. 管理端或后续教师端按学生档案中的学校班级、托管班和在托状态创建当天任务；也可以通过 `student_ids` 指定当天实际接送学生。
-3. 老师出发前确认名单并调用 `start`。
+2. 管理端或教师端按学生档案中的学校班级、托管班和在托状态创建当天任务；也可以通过周期排班自动生成待确认任务，或通过 `student_ids` 指定当天实际接送学生。
+3. 老师出发前核对名单、执行教师和预计出发时间，确认任务后家长会收到今日接送安排通知，再调用 `start`。
 4. 老师逐个登记学生状态：校门口接到必须先上传照片；接到后还要确认到班，未到班和异常必须补充说明；自行到托管班、家长临时接走、请假和未找到可以直接登记。到班后可以登记已离班、中途离班或异常，并填写说明。
 5. 每次登记会保留当前状态、追加不可覆盖的接送事件，并产生通知记录；接送途中可交接给同班已授权教师，交接人、时间和说明会单独留痕。
 6. 所有学生都已处理后调用 `finish`；仍有 `planned`、`picked_up`、`not_arrived` 或 `abnormal` 学生时服务端会拒绝完成。
 
-接送和作业通知默认先落库到消息中心；配置 `wechat.subscribe_template_id` 后，系统会异步尝试发送微信订阅消息，模板字段按 `thing1`（标题）、`thing2`（内容）、`time3`（时间）配置，结果回写为 `sent` 或 `failed`。照片上传接口返回的原始路径仅供内部保存，上传时可通过 `operation_id`、`task_id` 或 `meal_plan_id` 建立媒体元数据关联；查询接送动态或作业时会返回 15 分钟有效的签名 URL。直接访问 `/uploads/*path`、过期或篡改签名都会被拒绝。家长端新流程通过教师邀请或学校班级信息提交入班申请，不需要学生档案编号；审核通过后自动建档、绑定并通知家长，旧绑定接口仅保留兼容。教师班级授权通过 `/api/v1/teacher-assignments` 配置，教师接送、请假和作业接口会自动按授权班级收敛范围。
+接送和作业通知默认先落库到消息中心；配置 `wechat.subscribe_templates` 后，系统会异步尝试发送微信订阅消息，模板字段按实际模板配置，结果回写为 `sent`、`skipped` 或 `failed`，失败会按 worker 配置重试，且不会回滚业务。照片上传接口返回的原始路径仅供内部保存，查询接送动态、餐食或作业时会返回 15 分钟有效的签名 URL。直接访问 `/uploads/*path`、过期或篡改签名都会被拒绝。家长端新流程通过微信登录后提交学校班级信息入班申请，不需要学生档案编号；审核通过后自动建档、绑定并通知家长，旧绑定接口仅保留兼容。教师班级授权通过 `/api/v1/teacher-assignments` 配置，教师接送、请假、作业和排班接口会自动按授权班级收敛范围。
+
+生产配置和验收材料：
+
+- `configs/config.production.example.yaml`
+- `docs/production-runbook.md`
+- `docs/privacy-policy.md`
+- `docs/real-device-test-checklist.md`
 
 ## OpenAPI
 
@@ -585,20 +597,14 @@ docker build -f deployments/Dockerfile --build-arg TARGET=migrate -t tuoguan-sys
 docker compose up -d --build
 ```
 
-## 当前未接入的内容
+## 当前仍依赖外部条件的内容
 
 这些不是遗漏，而是刻意等待真实业务边界或外部配置后再做：
 
-- 微信订阅消息发送失败自动重试和模板字段可视化配置
-- 更严格的照片隐私审计和对象存储适配
-- 家长绑定码、手机号核验和家长主动解绑
-- 更细的接送路线、临时调班和多机构数据隔离
-- 业务级 Redis cache
-- 业务队列任务 handler
-- RBAC / 权限系统
-- CI/CD 流水线
-- Swagger UI 页面
-- Testcontainers 集成测试
+- 真实微信 AppSecret、模板审核、HTTPS 合法域名和真机授权
+- 真实云对象存储、MySQL/Redis 账号及备份恢复演练
+- 运营主体补全隐私政策的联系人、保存期限和客服渠道
+- CI/CD 流水线、Testcontainers 集成测试和独立部署平台
 
 ## 后续建议
 
@@ -608,4 +614,4 @@ docker compose up -d --build
 2. GitHub Actions / GitLab CI：自动跑 `go test`、`go vet`、`go build`、OpenAPI lint。
 3. Swagger UI：开发环境可视化查看 OpenAPI。
 4. 集成测试：用 Testcontainers 跑真实 MySQL / Redis。
-5. 微信订阅消息发送失败重试、模板字段可视化配置、照片隐私审计和对象存储适配。
+5. 在真实微信、MySQL、对象存储和 HTTPS 环境完成发布前验收。

@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [Vue(), VueJsx()],
   test: {
     environment: 'happy-dom',
+    // Several UI integration suites share the form adapter's process-level
+    // configuration; serial files keep their DOM/config cleanup deterministic.
+    fileParallelism: false,
     environmentOptions: {
       happyDOM: {
         settings: {

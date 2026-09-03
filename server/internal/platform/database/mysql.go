@@ -70,7 +70,10 @@ func NormalizeMySQLDSN(raw string) (string, error) {
 		cfg.Params = map[string]string{}
 	}
 	cfg.Params["charset"] = "utf8mb4"
-	cfg.Params["time_zone"] = "+00:00"
+	// go-sql-driver/mysql writes custom DSN parameters into a SET statement
+	// without adding SQL string delimiters. The time zone therefore needs to
+	// include its own quotes, otherwise MySQL parses +00:00 as an expression.
+	cfg.Params["time_zone"] = "'+00:00'"
 	return cfg.FormatDSN(), nil
 }
 

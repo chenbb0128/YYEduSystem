@@ -1,6 +1,6 @@
 <view class="page pickup-page">
   <view class="page-header pickup-header">
-    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">星芽托管助手 · 教师端</view><view class="page-title">今日接送</view><view class="page-subtitle">把每一次接到、到班和离班，都记录得清清楚楚</view></view></view>
+    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">豆芽成长助手 · 教师端</view><view class="page-title">今日接送</view><view class="page-subtitle">把每一次接到、到班和离班，都记录得清清楚楚</view></view></view>
     <view class="page-helper">{{loading ? '任务同步中…' : date}}</view>
   </view>
 

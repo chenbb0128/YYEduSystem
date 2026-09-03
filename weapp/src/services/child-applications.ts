@@ -34,6 +34,8 @@ export interface ChildApplication {
 export interface CreateChildApplicationPayload {
   student_name: string
   school_name?: string
+  grade?: string
+  class_name?: string
   class_text?: string
   school_class_id?: number
   guardian_name?: string

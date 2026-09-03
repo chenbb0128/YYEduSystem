@@ -41,6 +41,9 @@ func Load(path string) (Config, error) {
 		"auth.bootstrap_admin_enabled",
 		"auth.bootstrap_admin_username",
 		"auth.bootstrap_admin_password",
+		"auth.bootstrap_platform_admin_enabled",
+		"auth.bootstrap_platform_admin_username",
+		"auth.bootstrap_platform_admin_password",
 		"wechat.enabled",
 		"wechat.app_id",
 		"wechat.app_secret",
@@ -53,6 +56,21 @@ func Load(path string) (Config, error) {
 		"wechat.subscribe_templates.homework",
 		"wechat.subscribe_templates.leave",
 		"wechat.subscribe_templates.summary",
+		"sms.enabled",
+		"sms.provider",
+		"sms.secret_id",
+		"sms.secret_key",
+		"sms.sdk_app_id",
+		"sms.sign_name",
+		"sms.template_id",
+		"sms.region",
+		"sms.endpoint",
+		"sms.timeout",
+		"sms.code_secret",
+		"sms.code_length",
+		"sms.code_ttl",
+		"sms.resend_interval",
+		"sms.max_verify_attempts",
 		"storage.upload_dir",
 		"storage.url_signing_secret",
 		"storage.provider",
@@ -92,6 +110,7 @@ func Load(path string) (Config, error) {
 		"worker.notification_poll_interval",
 		"worker.notification_lease",
 		"worker.notification_max_attempts",
+		"worker.schedule_generation_interval",
 		"observability.metrics.enabled",
 		"observability.metrics.path",
 		"observability.metrics.namespace",
@@ -155,6 +174,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.bootstrap_admin_enabled", true)
 	v.SetDefault("auth.bootstrap_admin_username", "admin")
 	v.SetDefault("auth.bootstrap_admin_password", "123456")
+	v.SetDefault("auth.bootstrap_platform_admin_enabled", true)
+	v.SetDefault("auth.bootstrap_platform_admin_username", "platform")
+	v.SetDefault("auth.bootstrap_platform_admin_password", "123456")
 	v.SetDefault("wechat.enabled", false)
 	v.SetDefault("wechat.endpoint", "https://api.weixin.qq.com/sns/jscode2session")
 	v.SetDefault("wechat.timeout", 5*time.Second)
@@ -164,6 +186,21 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("wechat.subscribe_templates.homework", "")
 	v.SetDefault("wechat.subscribe_templates.leave", "")
 	v.SetDefault("wechat.subscribe_templates.summary", "")
+	v.SetDefault("sms.enabled", false)
+	v.SetDefault("sms.provider", "local")
+	v.SetDefault("sms.secret_id", "")
+	v.SetDefault("sms.secret_key", "")
+	v.SetDefault("sms.sdk_app_id", "")
+	v.SetDefault("sms.sign_name", "")
+	v.SetDefault("sms.template_id", "")
+	v.SetDefault("sms.region", "ap-guangzhou")
+	v.SetDefault("sms.endpoint", "https://sms.tencentcloudapi.com/")
+	v.SetDefault("sms.timeout", 5*time.Second)
+	v.SetDefault("sms.code_secret", "")
+	v.SetDefault("sms.code_length", 6)
+	v.SetDefault("sms.code_ttl", 5*time.Minute)
+	v.SetDefault("sms.resend_interval", time.Minute)
+	v.SetDefault("sms.max_verify_attempts", 5)
 	v.SetDefault("storage.upload_dir", "data/uploads")
 	v.SetDefault("storage.url_signing_secret", "")
 	v.SetDefault("storage.provider", "local")
@@ -203,6 +240,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("worker.notification_poll_interval", 2*time.Second)
 	v.SetDefault("worker.notification_lease", 30*time.Second)
 	v.SetDefault("worker.notification_max_attempts", 3)
+	v.SetDefault("worker.schedule_generation_interval", 5*time.Minute)
 	v.SetDefault("observability.metrics.enabled", true)
 	v.SetDefault("observability.metrics.path", "/metrics")
 	v.SetDefault("observability.metrics.namespace", "tuoguan_system")

@@ -43,7 +43,7 @@ func (h *Handler) SetStaffScope(value assignment.Store)                  { h.ass
 func (h *Handler) SetAuditWriter(value auditmodule.Writer)               { h.audit = value }
 
 func (h *Handler) recordAudit(c *gin.Context, action, resourceType string, resourceID uint64) {
-	auditmodule.RecordForContext(c.Request.Context(), h.audit, h.orgID, action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
+	auditmodule.RecordForContext(c.Request.Context(), h.audit, identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), action, resourceType, &resourceID, "{}", c.GetHeader("X-Request-ID"))
 }
 func (h *Handler) RegisterStaffRoutes(api *gin.RouterGroup) {
 	api.GET("/daily-summaries", h.list)
@@ -155,7 +155,7 @@ func (h *Handler) list(c *gin.Context) {
 		}
 		date = &parsed
 	}
-	items, e := h.store.List(c.Request.Context(), h.orgID, date)
+	items, e := h.store.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), date)
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -175,7 +175,7 @@ func (h *Handler) listVersions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.store.Find(c.Request.Context(), h.orgID, id)
+	item, err := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -184,7 +184,7 @@ func (h *Handler) listVersions(c *gin.Context) {
 		response.Error(c, response.Forbidden())
 		return
 	}
-	items, err := h.store.ListVersions(c.Request.Context(), h.orgID, id)
+	items, err := h.store.ListVersions(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -212,7 +212,7 @@ func (h *Handler) generate(c *gin.Context) {
 	content, updates := h.buildDraft(c, date)
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
 	uid := principal.SubjectID
-	item, e := h.store.Generate(c.Request.Context(), h.orgID, GenerateParams{SummaryDate: date, Content: content, ChildUpdates: updates, CreatedByUserID: &uid, CreatedByName: fmt.Sprintf("用户%d", uid)})
+	item, e := h.store.Generate(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), GenerateParams{SummaryDate: date, Content: content, ChildUpdates: updates, CreatedByUserID: &uid, CreatedByName: fmt.Sprintf("用户%d", uid)})
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -228,7 +228,7 @@ func (h *Handler) update(c *gin.Context) {
 	if !ok {
 		return
 	}
-	existing, e := h.store.Find(c.Request.Context(), h.orgID, id)
+	existing, e := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -247,7 +247,7 @@ func (h *Handler) update(c *gin.Context) {
 		response.Error(c, response.Forbidden())
 		return
 	}
-	item, e := h.store.Update(c.Request.Context(), h.orgID, UpdateParams{ID: id, Content: req.Content, ChildUpdates: childUpdates})
+	item, e := h.store.Update(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), UpdateParams{ID: id, Content: req.Content, ChildUpdates: childUpdates})
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -266,7 +266,7 @@ func (h *Handler) withdraw(c *gin.Context) {
 	if !ok {
 		return
 	}
-	existing, err := h.store.Find(c.Request.Context(), h.orgID, id)
+	existing, err := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -280,7 +280,7 @@ func (h *Handler) withdraw(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	item, err := h.store.Withdraw(c.Request.Context(), h.orgID, id, req.Reason)
+	item, err := h.store.Withdraw(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id, req.Reason)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -298,7 +298,7 @@ func (h *Handler) correct(c *gin.Context) {
 	if !ok {
 		return
 	}
-	existing, err := h.store.Find(c.Request.Context(), h.orgID, id)
+	existing, err := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -318,7 +318,7 @@ func (h *Handler) correct(c *gin.Context) {
 		return
 	}
 	principal, _ := identity.PrincipalFromContext(c.Request.Context())
-	item, err := h.store.Correct(c.Request.Context(), h.orgID, CorrectParams{ID: id, Content: req.Content, ChildUpdates: childUpdates, Reason: req.Reason, CreatedByUserID: &principal.SubjectID, CreatedByName: fmt.Sprintf("用户%d", principal.SubjectID)})
+	item, err := h.store.Correct(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CorrectParams{ID: id, Content: req.Content, ChildUpdates: childUpdates, Reason: req.Reason, CreatedByUserID: &principal.SubjectID, CreatedByName: fmt.Sprintf("用户%d", principal.SubjectID)})
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -335,7 +335,7 @@ func (h *Handler) setStatus(c *gin.Context, status string) {
 	if !ok {
 		return
 	}
-	existing, e := h.store.Find(c.Request.Context(), h.orgID, id)
+	existing, e := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -344,7 +344,7 @@ func (h *Handler) setStatus(c *gin.Context, status string) {
 		response.Error(c, response.Forbidden())
 		return
 	}
-	item, e := h.store.SetStatus(c.Request.Context(), h.orgID, id, status)
+	item, e := h.store.SetStatus(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id, status)
 	if e != nil {
 		h.respond(c, e)
 		return
@@ -360,7 +360,7 @@ func (h *Handler) notifyPublished(c *gin.Context, item DailySummary) {
 	if h.notifications == nil || h.masterData == nil {
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return
 	}
@@ -372,7 +372,7 @@ func (h *Handler) notifyPublished(c *gin.Context, item DailySummary) {
 		if update := strings.TrimSpace(item.ChildUpdates[student.ID]); update != "" {
 			content += "：" + update
 		}
-		_, _ = h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.ID, Kind: "daily_summary_published", Title: "教师每日总结已发布", Content: content})
+		_, _ = h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.ID, Kind: "daily_summary_published", Title: "教师每日总结已发布", Content: content})
 	}
 }
 
@@ -380,7 +380,7 @@ func (h *Handler) notifyWithdrawn(c *gin.Context, item DailySummary) {
 	if h.notifications == nil || h.masterData == nil {
 		return
 	}
-	students, err := h.masterData.ListStudents(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return
 	}
@@ -388,7 +388,7 @@ func (h *Handler) notifyWithdrawn(c *gin.Context, item DailySummary) {
 		if student.Status != "active" || !h.studentAllowedForStaff(c, student) {
 			continue
 		}
-		_, _ = h.notifications.CreateNotification(c.Request.Context(), h.orgID, pickup.CreateNotificationParams{StudentID: student.ID, Kind: "daily_summary_withdrawn", Title: "教师每日总结已撤回", Content: fmt.Sprintf("%s 的托管每日总结已撤回，请以最新通知为准", student.Name)})
+		_, _ = h.notifications.CreateNotification(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), pickup.CreateNotificationParams{StudentID: student.ID, Kind: "daily_summary_withdrawn", Title: "教师每日总结已撤回", Content: fmt.Sprintf("%s 的托管每日总结已撤回，请以最新通知为准", student.Name)})
 	}
 }
 func (h *Handler) parentSummary(c *gin.Context) {
@@ -406,12 +406,12 @@ func (h *Handler) parentSummary(c *gin.Context) {
 		}
 		date = parsed
 	}
-	items, e := h.store.List(c.Request.Context(), h.orgID, &date)
+	items, e := h.store.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &date)
 	if e != nil {
 		h.respond(c, e)
 		return
 	}
-	bindings, e := h.parents.ListBindings(c.Request.Context(), h.orgID, principal.SubjectID)
+	bindings, e := h.parents.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID)
 	if e != nil {
 		response.Error(c, response.NotFound())
 		return
@@ -434,7 +434,7 @@ func (h *Handler) parentSummary(c *gin.Context) {
 				child[id] = text
 			}
 		}
-		readAt, _ := h.store.ReadAt(c.Request.Context(), h.orgID, item.ID, principal.SubjectID)
+		readAt, _ := h.store.ReadAt(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), item.ID, principal.SubjectID)
 		response.OK(c, toViewWithChildren(item, child, readAt))
 		return
 	}
@@ -451,7 +451,7 @@ func (h *Handler) parentRead(c *gin.Context) {
 	if !ok {
 		return
 	}
-	item, err := h.store.Find(c.Request.Context(), h.orgID, id)
+	item, err := h.store.Find(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		h.respond(c, err)
 		return
@@ -460,7 +460,7 @@ func (h *Handler) parentRead(c *gin.Context) {
 		response.Error(c, response.NotFound())
 		return
 	}
-	bindings, err := h.parents.ListBindings(c.Request.Context(), h.orgID, principal.SubjectID)
+	bindings, err := h.parents.ListBindings(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID)
 	if err != nil {
 		response.Error(c, response.NotFound())
 		return
@@ -490,18 +490,18 @@ func (h *Handler) parentRead(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.store.MarkRead(c.Request.Context(), h.orgID, id, principal.SubjectID, item.Version); err != nil {
+	if err := h.store.MarkRead(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id, principal.SubjectID, item.Version); err != nil {
 		h.respond(c, err)
 		return
 	}
-	readAt, _ := h.store.ReadAt(c.Request.Context(), h.orgID, id, principal.SubjectID)
+	readAt, _ := h.store.ReadAt(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id, principal.SubjectID)
 	response.OK(c, gin.H{"id": id, "read": true, "read_at": format(readAt)})
 }
 
 func (h *Handler) buildDraft(c *gin.Context, date time.Time) (string, map[uint64]string) {
 	ops := []pickup.Operation{}
 	if h.pickup != nil {
-		all, _ := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+		all, _ := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		for _, op := range all {
 			if sameDay(op.OperationDate, date) && h.operationAllowed(c, op) {
 				ops = append(ops, op)
@@ -510,7 +510,7 @@ func (h *Handler) buildDraft(c *gin.Context, date time.Time) (string, map[uint64
 	}
 	tasks := []homework.Task{}
 	if h.homework != nil {
-		all, _ := h.homework.ListTasks(c.Request.Context(), h.orgID)
+		all, _ := h.homework.ListTasks(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 		for _, task := range all {
 			if sameDay(task.HomeworkDate, date) && h.staffClassAllowed(c, task.SchoolClassID) {
 				tasks = append(tasks, task)
@@ -520,7 +520,7 @@ func (h *Handler) buildDraft(c *gin.Context, date time.Time) (string, map[uint64
 	mealCount := 0
 	if h.meals != nil {
 		from, to := date, date
-		plans, _ := h.meals.ListPlans(c.Request.Context(), h.orgID, &from, &to)
+		plans, _ := h.meals.ListPlans(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), &from, &to)
 		mealCount = len(plans)
 	}
 	students := 0
@@ -528,7 +528,7 @@ func (h *Handler) buildDraft(c *gin.Context, date time.Time) (string, map[uint64
 	left := 0
 	updates := map[uint64]string{}
 	for _, op := range ops {
-		members, _ := h.pickup.ListOperationStudents(c.Request.Context(), h.orgID, op.ID)
+		members, _ := h.pickup.ListOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), op.ID)
 		students += len(members)
 		for _, member := range members {
 			switch member.Status {
@@ -560,7 +560,7 @@ func (h *Handler) staffAllowedSummary(c *gin.Context, item DailySummary) bool {
 	if h.pickup == nil {
 		return true
 	}
-	operations, err := h.pickup.ListOperations(c.Request.Context(), h.orgID)
+	operations, err := h.pickup.ListOperations(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID))
 	if err != nil {
 		return false
 	}
@@ -580,7 +580,7 @@ func (h *Handler) staffCanUseSummary(c *gin.Context) bool {
 	if h.assignments == nil {
 		return false
 	}
-	items, err := h.assignments.List(c.Request.Context(), h.orgID, p.SubjectID, 0)
+	items, err := h.assignments.List(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), p.SubjectID, 0)
 	if err != nil {
 		return false
 	}
@@ -605,7 +605,7 @@ func (h *Handler) filterChildUpdates(c *gin.Context, updates map[uint64]string) 
 		return nil, false
 	}
 	for id, text := range updates {
-		student, err := h.masterData.FindStudent(c.Request.Context(), h.orgID, id)
+		student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 		if err != nil || !h.classAllowed(c, p.SubjectID, student.SchoolClassID) {
 			return nil, false
 		}
@@ -623,7 +623,7 @@ func (h *Handler) studentAllowedForStaff(c *gin.Context, student masterdata.Stud
 }
 
 func (h *Handler) classAllowed(c *gin.Context, teacherID, schoolClassID uint64) bool {
-	item, err := h.assignments.FindByPair(c.Request.Context(), h.orgID, teacherID, schoolClassID)
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), teacherID, schoolClassID)
 	return err == nil && item.Status == assignment.AssignmentStatusActive
 }
 
@@ -639,7 +639,7 @@ func (h *Handler) operationAllowed(c *gin.Context, op pickup.Operation) bool {
 	if !ok || p.Kind != identity.PrincipalKindUser || p.Role != identity.UserRoleTeacher || h.assignments == nil {
 		return true
 	}
-	item, e := h.assignments.FindByPair(c.Request.Context(), h.orgID, p.SubjectID, op.SchoolClassID)
+	item, e := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), p.SubjectID, op.SchoolClassID)
 	return e == nil && item.Status == assignment.AssignmentStatusActive
 }
 func canWrite(c *gin.Context) bool {

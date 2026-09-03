@@ -42,6 +42,10 @@ auth:
   bootstrap_admin_enabled: true
   bootstrap_admin_username: "admin"
   bootstrap_admin_password: "123456"
+  # 仅本地/测试初始化平台拥有者账号；生产必须关闭并改用受控 provisioning。
+  bootstrap_platform_admin_enabled: true
+  bootstrap_platform_admin_username: "platform"
+  bootstrap_platform_admin_password: "123456"
 
 wechat:
   enabled: false
@@ -65,6 +69,25 @@ wechat:
     homework: { title: thing1, content: thing2, time: time3 }
     leave: { title: thing1, content: thing2, time: time3 }
     summary: { title: thing1, content: thing2, time: time3 }
+
+sms:
+  # 本地开发默认不调用短信平台，接口会返回随机 debug_code 供开发测试。
+  enabled: false
+  provider: local # local or tencent
+  secret_id: ""
+  secret_key: ""
+  sdk_app_id: ""
+  sign_name: ""
+  template_id: ""
+  region: ap-guangzhou
+  endpoint: "https://sms.tencentcloudapi.com/"
+  timeout: 5s
+  # 留空时复用 auth.secret；生产环境建议单独设置。
+  code_secret: ""
+  code_length: 6
+  code_ttl: 5m
+  resend_interval: 60s
+  max_verify_attempts: 5
 
 storage:
   provider: local
@@ -113,6 +136,8 @@ worker:
   notification_poll_interval: 2s
   notification_lease: 30s
   notification_max_attempts: 3
+  # worker 启用时会按此间隔补齐当天的周期排班任务；仅生成待确认草稿，不会绕过老师确认直接通知家长。
+  schedule_generation_interval: 5m
   queues:
     default: 1
 

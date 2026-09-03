@@ -60,6 +60,15 @@ const coreRoutes: RouteRecordRaw[] = [
           title: $t('page.auth.login'),
         },
       },
+      {
+        name: 'OrganizationRegister',
+        path: 'register',
+        component: () =>
+          import('#/views/_core/authentication/organization-register.vue'),
+        meta: {
+          title: '机构注册',
+        },
+      },
     ],
   },
 ];

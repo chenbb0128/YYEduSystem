@@ -13,26 +13,29 @@ import (
 
 const createUser = `-- name: CreateUser :execresult
 INSERT INTO users (
+    organization_id,
     username,
     password_hash,
     role,
     nickname,
     avatar,
     status
-) VALUES (?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateUserParams struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
-	Role         string `json:"role"`
-	Nickname     string `json:"nickname"`
-	Avatar       string `json:"avatar"`
-	Status       string `json:"status"`
+	OrganizationID uint64 `json:"organization_id"`
+	Username       string `json:"username"`
+	PasswordHash   string `json:"password_hash"`
+	Role           string `json:"role"`
+	Nickname       string `json:"nickname"`
+	Avatar         string `json:"avatar"`
+	Status         string `json:"status"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createUser,
+		arg.OrganizationID,
 		arg.Username,
 		arg.PasswordHash,
 		arg.Role,
@@ -44,30 +47,35 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Res
 
 const getUserByID = `-- name: GetUserByID :one
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-WHERE id = ?
+LEFT JOIN organizations ON organizations.id = users.organization_id
+WHERE users.id = ?
 LIMIT 1
 `
 
 type GetUserByIDRow struct {
-	ID           uint64    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	Role         string    `json:"role"`
-	Nickname     string    `json:"nickname"`
-	Avatar       string    `json:"avatar"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                 uint64    `json:"id"`
+	OrganizationID     uint64    `json:"organization_id"`
+	Username           string    `json:"username"`
+	PasswordHash       string    `json:"password_hash"`
+	Role               string    `json:"role"`
+	Nickname           string    `json:"nickname"`
+	Avatar             string    `json:"avatar"`
+	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	OrganizationStatus string    `json:"organization_status"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id uint64) (GetUserByIDRow, error) {
@@ -75,6 +83,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uint64) (GetUserByIDRow, e
 	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.Username,
 		&i.PasswordHash,
 		&i.Role,
@@ -83,36 +92,42 @@ func (q *Queries) GetUserByID(ctx context.Context, id uint64) (GetUserByIDRow, e
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OrganizationStatus,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-WHERE username = ?
+LEFT JOIN organizations ON organizations.id = users.organization_id
+WHERE users.username = ?
 LIMIT 1
 `
 
 type GetUserByUsernameRow struct {
-	ID           uint64    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	Role         string    `json:"role"`
-	Nickname     string    `json:"nickname"`
-	Avatar       string    `json:"avatar"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                 uint64    `json:"id"`
+	OrganizationID     uint64    `json:"organization_id"`
+	Username           string    `json:"username"`
+	PasswordHash       string    `json:"password_hash"`
+	Role               string    `json:"role"`
+	Nickname           string    `json:"nickname"`
+	Avatar             string    `json:"avatar"`
+	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	OrganizationStatus string    `json:"organization_status"`
 }
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
@@ -120,6 +135,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
+		&i.OrganizationID,
 		&i.Username,
 		&i.PasswordHash,
 		&i.Role,
@@ -128,35 +144,41 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OrganizationStatus,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
 SELECT
-    id,
-    username,
-    password_hash,
-    role,
-    nickname,
-    avatar,
-    status,
-    created_at,
-    updated_at
+    users.id,
+    users.organization_id,
+    users.username,
+    users.password_hash,
+    users.role,
+    users.nickname,
+    users.avatar,
+    users.status,
+    users.created_at,
+    users.updated_at,
+    COALESCE(organizations.status, 'active') AS organization_status
 FROM users
-ORDER BY id ASC
+LEFT JOIN organizations ON organizations.id = users.organization_id
+ORDER BY users.id ASC
 `
 
 type ListUsersRow struct {
-	ID           uint64    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	Role         string    `json:"role"`
-	Nickname     string    `json:"nickname"`
-	Avatar       string    `json:"avatar"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                 uint64    `json:"id"`
+	OrganizationID     uint64    `json:"organization_id"`
+	Username           string    `json:"username"`
+	PasswordHash       string    `json:"password_hash"`
+	Role               string    `json:"role"`
+	Nickname           string    `json:"nickname"`
+	Avatar             string    `json:"avatar"`
+	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	OrganizationStatus string    `json:"organization_status"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
@@ -170,6 +192,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		var i ListUsersRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrganizationID,
 			&i.Username,
 			&i.PasswordHash,
 			&i.Role,
@@ -178,6 +201,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OrganizationStatus,
 		); err != nil {
 			return nil, err
 		}

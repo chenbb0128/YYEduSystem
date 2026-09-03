@@ -9,6 +9,14 @@ export interface SchoolClassRecord {
   status: string
 }
 
+export interface SchoolRecord {
+  id: number
+  name: string
+  address: string
+  contact_phone: string
+  status: string
+}
+
 export interface StudentRecord {
   id: number
   school_id: number
@@ -39,6 +47,10 @@ async function masterDataRequest<T>(url: string) {
 
 export function getSchoolClasses() {
   return masterDataRequest<PageResult<SchoolClassRecord>>('/school-classes')
+}
+
+export function getSchools() {
+  return masterDataRequest<PageResult<SchoolRecord>>('/schools')
 }
 
 export function getStudents() {
