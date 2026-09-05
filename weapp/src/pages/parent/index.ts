@@ -5,6 +5,7 @@ import type { MessageSubscription, MessageSubscriptionKind } from '@/services/su
 import type { DailySummary } from '@/services/summary'
 import { getStoredPhoneLoginPhone } from '@/services/auth'
 import { createParentChildApplication, getParentChildApplications, updateParentChildApplication } from '@/services/child-applications'
+import { clearPendingClassInviteToken, getPendingClassInviteToken, savePendingClassInviteToken } from '@/services/class-invites'
 import { createParentDietNoteChangeRequest, getParentDietNote, getParentDietNoteChangeRequests, getParentMealHistory, getParentMeals, mealPhotoURL } from '@/services/meal'
 import { cancelParentLeaveRequest, createParentLeaveRequest, createParentPickupChange, getParentHomework, getParentLeaveRequests, getParentMe, getParentNotifications, getParentPickupEvents, getParentPickupToday, leaveStatusLabel, markParentNotificationRead, parentPhotoURL, updateParentLeaveRequest } from '@/services/parent'
 import { getToday } from '@/services/pickup'
@@ -23,6 +24,18 @@ function nextDate(date: string) {
   const month = `${value.getMonth() + 1}`.padStart(2, '0')
   const day = `${value.getDate()}`.padStart(2, '0')
   return `${value.getFullYear()}-${month}-${day}`
+}
+
+function decodeInviteToken(value: string | undefined) {
+  if (!value) {
+    return ''
+  }
+  try {
+    return decodeURIComponent(value)
+  }
+  catch {
+    return value
+  }
 }
 
 function offsetDate(date: string, offset: number) {
@@ -146,6 +159,7 @@ Page({
     bound: false,
     applications: [] as ChildApplicationView[],
     invitedSchoolClassID: 0,
+    inviteToken: '',
     editingApplicationID: 0,
     editingSchoolClassID: 0,
     editingOriginalSchoolName: '',
@@ -193,13 +207,19 @@ Page({
     privacyPolicyVersion: '',
     privacyConsentError: '',
     dynamicLoadNotice: '',
+    redirectingToApply: false,
   },
   onLoad(options: Record<string, string | undefined> = {}) {
     const invitedSchoolClassID = Number(options.schoolClassId || 0)
+    const inviteToken = decodeInviteToken(options.inviteToken || options.scene || getPendingClassInviteToken())
     this.setData({
       invitedSchoolClassID: Number.isFinite(invitedSchoolClassID) ? invitedSchoolClassID : 0,
+      inviteToken,
       guardianPhone: getStoredPhoneLoginPhone(),
     })
+    if (inviteToken) {
+      savePendingClassInviteToken(inviteToken)
+    }
     void this.loadParentData()
   },
   onShow() {
@@ -215,11 +235,15 @@ Page({
       }
       const me = await getParentMe()
       if (!(me.children || []).length) {
+        if (this.data.redirectingToApply) {
+          return
+        }
         this.clearParentContent()
-        this.setData({ contentReady: false, loading: false })
+        this.setData({ contentReady: false, loading: false, redirectingToApply: true })
         this.openAddChildPage(true)
         return
       }
+      this.setData({ redirectingToApply: false })
       await this.applyParentMe(me)
     }
     catch (error) {
@@ -354,12 +378,17 @@ Page({
   },
   openAddChildPage(replace = false) {
     if (typeof wx === 'undefined') {
-      this.setData({ activeTab: 'apply', contentReady: true })
+      this.setData({ activeTab: 'apply', contentReady: true, redirectingToApply: false })
       return
     }
+    const inviteQuery = this.data.inviteToken
+      ? `?inviteToken=${encodeURIComponent(this.data.inviteToken)}`
+      : this.data.invitedSchoolClassID
+        ? `?schoolClassId=${this.data.invitedSchoolClassID}`
+        : ''
     const payload = {
-      url: '/pages/parent-apply/index',
-      fail: () => this.setData({ activeTab: 'apply', contentReady: true }),
+      url: `/pages/parent-apply/index${inviteQuery}`,
+      fail: () => this.setData({ activeTab: 'apply', contentReady: true, redirectingToApply: false }),
     }
     if (replace) {
       wx.redirectTo(payload)
@@ -370,6 +399,15 @@ Page({
   handleBackToIdentity() {
     if (typeof wx !== 'undefined') {
       wx.reLaunch({ url: '/pages/index/index' })
+    }
+  },
+  handleOpenWrongbook() {
+    if (!this.data.selectedStudentID) {
+      this.showToast('请先选择孩子')
+      return
+    }
+    if (typeof wx !== 'undefined') {
+      wx.navigateTo({ url: `/pages/wrongbook/index?mode=parent&studentId=${this.data.selectedStudentID}` })
     }
   },
   handleFocus(event: WechatMiniprogram.InputFocus) {
@@ -385,8 +423,12 @@ Page({
   async handleSubmitApplication() {
     const childName = this.data.childName.trim()
     const guardianPhone = this.data.guardianPhone.trim()
-    if (!childName || !guardianPhone) {
-      this.showToast('请填写孩子姓名和家长手机号')
+    if (!childName) {
+      this.showToast('请填写孩子姓名')
+      return
+    }
+    if (this.data.inviteToken && !this.data.invitedSchoolClassID) {
+      this.showToast('班级邀请还在确认，请稍候')
       return
     }
     const retainsExistingClass = Boolean(
@@ -406,8 +448,9 @@ Page({
         school_name: this.data.schoolName.trim(),
         grade: this.data.classText.trim(),
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
+        ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),
-        guardian_phone: guardianPhone,
+        ...(guardianPhone ? { guardian_phone: guardianPhone } : {}),
         relationship: this.data.relationship.trim() || '家长',
         notes: this.data.applicationNotes.trim(),
       }
@@ -419,6 +462,9 @@ Page({
       }
       this.showToast(this.data.editingApplicationID ? '补充资料已提交，等待老师审核' : '申请已提交，等待老师审核')
       this.setData({ editingApplicationID: 0, editingSchoolClassID: 0, editingOriginalSchoolName: '', editingOriginalClassText: '', childName: '', schoolName: '', classText: '', guardianName: '', guardianPhone: getStoredPhoneLoginPhone(), relationship: '', applicationNotes: '', focusedField: '' })
+      if (this.data.inviteToken) {
+        clearPendingClassInviteToken()
+      }
       await this.loadParentData()
     }
     catch (error) {

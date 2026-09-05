@@ -1,12 +1,20 @@
+import type { TeacherLeaveRequest } from '@/services/leave'
 import type { PickupChangeRequest, PickupMemberStatus, PickupOperation, PickupOperationStudent } from '@/services/pickup'
 import type { TeacherAssignmentRecord } from '@/services/teacher-assignments'
-import { createTeacherLeaveRequest } from '@/services/leave'
-import { addTemporaryPickupStudent, completeTemporaryPickupStudentProfile, confirmPickupOperation, correctPickupEvent, createPickupOperation, finishPickupOperation, getPickupChangeRequests, getPickupCloseCheck, getPickupEvents, getPickupHandoffs, getPickupHandoffTeachers, getPickupWorkbench, getToday, handoverPickupOperation, markPickupStudent, pickupOperationStatusLabel, pickupStatusLabel, reviewPickupChangeRequest, startPickupOperation, uploadPickupPhoto } from '@/services/pickup'
+import { createTeacherLeaveRequest, getTeacherLeaveRequests, reviewTeacherLeaveRequest } from '@/services/leave'
+import { addTemporaryPickupStudent, bulkArrivePickupStudents, completeTemporaryPickupStudentProfile, confirmPickupOperation, correctPickupEvent, createBatchNotification, createPickupOperation, finishPickupOperation, getPickupChangeRequests, getPickupCloseCheck, getPickupEvents, getPickupHandoffs, getPickupHandoffTeachers, getPickupWorkbench, getToday, handoverPickupOperation, markPickupStudent, pickupOperationStatusLabel, pickupStatusLabel, reviewPickupChangeRequest, startPickupOperation, uploadPickupPhoto } from '@/services/pickup'
+import { getDailyExceptions } from '@/services/report'
 import { getTeacherAssignments } from '@/services/teacher-assignments'
 import { showFeedback } from '@/utils/feedback'
 
 interface OperationCard extends PickupOperation {
-  students: Array<PickupOperationStudent & { checked_display: string, status_label: string }>
+  students: Array<PickupOperationStudent & { checked_display: string, status_label: string, photo_status: string, can_bulk_arrive: boolean, selected_for_bulk: boolean }>
+  class_label: string
+  counts: Record<string, number>
+  pending_photo_count: number
+  bulk_arrival_count: number
+  selected_arrival_count: number
+  all_arrival_selected: boolean
   status_label: string
   overdue: boolean
 }
@@ -17,6 +25,41 @@ interface TeacherClassOption extends TeacherAssignmentRecord {
 
 interface PickupChangeRequestView extends PickupChangeRequest {
   requested_status_label: string
+}
+
+interface TeacherLeaveRequestView extends TeacherLeaveRequest {
+  status_label: string
+}
+
+interface WorkbenchTotals {
+  tasks: number
+  students: number
+  planned: number
+  picked_up: number
+  arrived: number
+  finished: number
+  abnormal: number
+  pending_photo: number
+  profile_pending: number
+  [key: string]: number
+}
+
+interface WorkbenchTodo {
+  key: string
+  kind: string
+  title: string
+  message: string
+}
+
+function formatCheckedAt(value?: string) {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return `已记录 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function isPickupOverdue(operation: PickupOperation, students: PickupOperationStudent[]) {
@@ -30,6 +73,12 @@ function isPickupOverdue(operation: PickupOperation, students: PickupOperationSt
   return !Number.isNaN(expected.getTime()) && Date.now() > expected.getTime() + 30 * 60 * 1000
 }
 
+function uniqueMessages(messages: string[]) {
+  return Array.from(new Set(messages.map(message => message.trim()).filter(Boolean)))
+}
+
+let operationsLoadPromise: Promise<void> | undefined
+
 Page({
   data: {
     date: getToday(),
@@ -39,6 +88,24 @@ Page({
     shareClassID: 0,
     alerts: [] as Array<{ kind: string, message: string }>,
     changeRequests: [] as PickupChangeRequestView[],
+    leaveRequests: [] as TeacherLeaveRequestView[],
+    totals: {
+      tasks: 0,
+      students: 0,
+      planned: 0,
+      picked_up: 0,
+      arrived: 0,
+      finished: 0,
+      abnormal: 0,
+      pending_photo: 0,
+      profile_pending: 0,
+    } as WorkbenchTotals,
+    handledStudentCount: 0,
+    overallProgress: 0,
+    overallProgressStyle: 'width: 0%;',
+    todoItems: [] as WorkbenchTodo[],
+    selectedArrivalKeys: [] as string[],
+    closeCheckOperationId: 0,
   },
   onLoad() {
     void this.loadOperations()
@@ -46,17 +113,50 @@ Page({
   onShow() {
     void this.loadOperations()
   },
+  async onPullDownRefresh() {
+    try {
+      await this.loadOperations()
+    }
+    finally {
+      if (typeof wx !== 'undefined') {
+        wx.stopPullDownRefresh()
+      }
+    }
+  },
   async loadOperations() {
+    // onLoad and onShow can fire back-to-back when a page is first opened.
+    // Share the in-flight request so the newer response cannot overwrite the
+    // selection state with a stale duplicate response.
+    if (operationsLoadPromise) {
+      return operationsLoadPromise
+    }
+    operationsLoadPromise = this.loadOperationsInternal()
+    try {
+      await operationsLoadPromise
+    }
+    finally {
+      operationsLoadPromise = undefined
+    }
+  },
+  async loadOperationsInternal() {
     this.setData({ loading: true })
     try {
-      const [result, assignmentResult, changeResult] = await Promise.all([
+      const [workbenchResult, assignmentResult, changeResult, leaveResult] = await Promise.allSettled([
         getPickupWorkbench(this.data.date),
         getTeacherAssignments(),
         getPickupChangeRequests({ date: this.data.date, status: 'pending' }),
+        getTeacherLeaveRequests(this.data.date),
       ])
+      if (workbenchResult.status === 'rejected') {
+        throw workbenchResult.reason
+      }
+      const result = workbenchResult.value
+      const assignmentItems = assignmentResult.status === 'fulfilled' ? assignmentResult.value.items : []
+      const changeItems = changeResult.status === 'fulfilled' ? changeResult.value.items : []
+      const leaveItems = leaveResult.status === 'fulfilled' ? leaveResult.value.items : []
       const assignments = Array.from(
         new Map(
-          assignmentResult.items
+          assignmentItems
             .filter(item => item.status === 'active')
             .map(item => [item.school_class_id, {
               ...item,
@@ -64,18 +164,85 @@ Page({
             }]),
         ).values(),
       )
-      const operations: OperationCard[] = result.operations.map(entry => ({
-        ...entry.operation,
-        status_label: pickupOperationStatusLabel(entry.operation.status),
-        overdue: isPickupOverdue(entry.operation, entry.students),
-        students: entry.students.map(student => ({
-          ...student,
-          checked_display: student.status === 'planned' ? '等待现场确认' : (student.checked_at || ''),
-          status_label: pickupStatusLabel(student.status),
-        })),
-      }))
+      const selectedKeys = new Set(this.data.selectedArrivalKeys)
+      const classLabels = new Map(assignments.map(item => [item.school_class_id, item.label]))
+      const operations: OperationCard[] = result.operations.map((entry) => {
+        const counts = entry.counts || {}
+        const pendingPhotoCount = entry.students.filter(student => student.status === 'picked_up' && !student.photo_url).length
+        const eligibleStudents = entry.students.filter(student => student.status === 'picked_up' || student.status === 'self_arrived')
+        const selectedStudents = eligibleStudents.filter(student => selectedKeys.has(`${entry.operation.id}:${student.student_id}`))
+        return {
+          ...entry.operation,
+          class_label: classLabels.get(entry.operation.school_class_id) || `学校班级 #${entry.operation.school_class_id}`,
+          counts,
+          pending_photo_count: pendingPhotoCount,
+          bulk_arrival_count: eligibleStudents.length,
+          selected_arrival_count: selectedStudents.length,
+          all_arrival_selected: eligibleStudents.length > 0 && selectedStudents.length === eligibleStudents.length,
+          status_label: pickupOperationStatusLabel(entry.operation.status),
+          overdue: isPickupOverdue(entry.operation, entry.students),
+          students: entry.students.map(student => ({
+            ...student,
+            checked_display: student.status === 'planned' ? '等待现场确认' : formatCheckedAt(student.checked_at),
+            photo_status: student.status === 'picked_up' ? (student.photo_url ? '照片已上传' : '照片待补') : '',
+            can_bulk_arrive: entry.operation.status === 'started' && (student.status === 'picked_up' || student.status === 'self_arrived'),
+            selected_for_bulk: entry.operation.status === 'started' && (student.status === 'picked_up' || student.status === 'self_arrived') && selectedKeys.has(`${entry.operation.id}:${student.student_id}`),
+            status_label: pickupStatusLabel(student.status),
+          })),
+        }
+      })
       const overdueAlerts = operations.filter(item => item.overdue).map(item => ({ kind: 'pickup_overdue', operation_id: item.id, message: `${item.executing_teacher_name || item.teacher_name || '接送任务'}已超过预计出发时间，请确认现场进度` }))
-      this.setData({ operations, assignments, alerts: [...result.alerts, ...overdueAlerts], changeRequests: changeResult.items.map(item => ({ ...item, requested_status_label: pickupStatusLabel(item.requested_status) })) })
+      const totals = {
+        tasks: result.totals?.tasks || 0,
+        students: result.totals?.students || 0,
+        planned: result.totals?.planned || 0,
+        picked_up: result.totals?.picked_up || 0,
+        arrived: result.totals?.arrived || 0,
+        finished: result.totals?.finished || 0,
+        abnormal: result.totals?.abnormal || 0,
+        pending_photo: result.totals?.pending_photo || 0,
+        profile_pending: result.totals?.profile_pending || 0,
+      }
+      const handledStudentCount = Math.max(0, totals.students - totals.planned)
+      const overallProgress = totals.students ? Math.round((handledStudentCount / totals.students) * 100) : 0
+      const todoItems: WorkbenchTodo[] = []
+      for (const operation of operations) {
+        if (operation.status === 'draft') {
+          todoItems.push({ key: `confirm-${operation.id}`, kind: 'confirm', title: '确认今日任务', message: `${operation.class_label}还没有确认接送名单` })
+        }
+        else if (operation.status === 'confirmed') {
+          todoItems.push({ key: `start-${operation.id}`, kind: 'start', title: '确认出发', message: `${operation.class_label}已确认名单，出发前请点击确认出发` })
+        }
+        if (operation.status === 'started' && (operation.counts.planned || 0) > 0) {
+          todoItems.push({ key: `pickup-${operation.id}`, kind: 'pickup', title: '完成校门口点名', message: `${operation.class_label}还有 ${operation.counts.planned} 名学生待现场确认` })
+        }
+        if (operation.status === 'started' && (operation.counts.picked_up || 0) > 0) {
+          todoItems.push({ key: `arrive-${operation.id}`, kind: 'arrive', title: '完成到班确认', message: `${operation.class_label}有 ${operation.counts.picked_up} 名学生待批量确认到班` })
+        }
+        if (operation.pending_photo_count > 0) {
+          todoItems.push({ key: `photo-${operation.id}`, kind: 'photo', title: '补传接送照片', message: `${operation.class_label}有 ${operation.pending_photo_count} 张接送照片待补` })
+        }
+        if (operation.counts.not_arrived || operation.counts.abnormal || operation.counts.absent) {
+          const count = (operation.counts.not_arrived || 0) + (operation.counts.abnormal || 0) + (operation.counts.absent || 0)
+          todoItems.push({ key: `exception-${operation.id}`, kind: 'exception', title: '处理异常', message: `${operation.class_label}有 ${count} 名学生需要收班核对` })
+        }
+        if (operation.students.some(student => student.profile_pending)) {
+          todoItems.push({ key: `profile-${operation.id}`, kind: 'profile', title: '补充临时档案', message: `${operation.class_label}有临时学生档案待补充` })
+        }
+      }
+      const availableSelectionKeys = new Set(operations.flatMap(operation => operation.students.filter(student => student.can_bulk_arrive).map(student => `${operation.id}:${student.student_id}`)))
+      const selectedArrivalKeys = this.data.selectedArrivalKeys.filter(key => availableSelectionKeys.has(key))
+      const loadAlerts = [...result.alerts, ...overdueAlerts]
+      if (assignmentResult.status === 'rejected') {
+        loadAlerts.push({ kind: 'support', operation_id: 0, message: '教师班级授权加载失败，暂时无法新建接送任务；已有任务仍可继续操作' })
+      }
+      if (changeResult.status === 'rejected') {
+        loadAlerts.push({ kind: 'support', operation_id: 0, message: '临时接送申请加载失败，请稍后刷新查看' })
+      }
+      if (leaveResult.status === 'rejected') {
+        loadAlerts.push({ kind: 'support', operation_id: 0, message: '请假申请加载失败，请稍后刷新查看' })
+      }
+      this.setData({ operations, assignments, totals, handledStudentCount, overallProgress, overallProgressStyle: `width: ${overallProgress}%;`, todoItems, selectedArrivalKeys, alerts: loadAlerts, changeRequests: changeItems.map(item => ({ ...item, requested_status_label: pickupStatusLabel(item.requested_status) })), leaveRequests: leaveItems.map(item => ({ ...item, status_label: item.status === 'pending' ? '待处理' : item.status === 'approved' ? '已同意' : item.status === 'rejected' ? '已拒绝' : '已取消' })) })
     }
     catch (error) {
       this.showToast(error instanceof Error ? error.message : '接送任务加载失败')
@@ -129,6 +296,32 @@ Page({
       },
     })
   },
+  async handleReviewLeaveRequest(event: WechatMiniprogram.TouchEvent) {
+    const requestID = Number(event.currentTarget.dataset.requestId)
+    const status = event.currentTarget.dataset.status as 'approved' | 'rejected'
+    const item = this.data.leaveRequests.find(request => request.id === requestID)
+    if (!item || !requestID || (status !== 'approved' && status !== 'rejected')) {
+      return
+    }
+    const submit = (teacherNote = '') => this.runOperationAction(
+      () => reviewTeacherLeaveRequest(requestID, { status, teacher_note: teacherNote }),
+      status === 'approved' ? '请假已同意，家长将收到通知' : '请假已拒绝，家长将收到通知',
+    )
+    if (status === 'approved' || typeof wx === 'undefined') {
+      await submit()
+      return
+    }
+    wx.showModal({
+      title: '拒绝请假申请',
+      editable: true,
+      placeholderText: '可填写原因，便于家长理解',
+      success: (result) => {
+        if (result.confirm) {
+          void submit(result.content?.trim() || '')
+        }
+      },
+    })
+  },
   chooseTeacherClass(assignments: TeacherClassOption[]): Promise<TeacherClassOption | null> {
     if (assignments.length === 1) {
       return Promise.resolve(assignments[0])
@@ -152,13 +345,12 @@ Page({
     }
     this.setData({ shareClassID: assignment.school_class_id })
     if (typeof wx === 'undefined') {
-      this.showToast('请在微信中使用邀请分享')
+      this.showToast('请在微信中打开班级邀请二维码')
       return
     }
-    wx.showShareMenu({
-      menus: ['shareAppMessage'],
-      success: () => this.showToast('已准备邀请，请点击右上角分享给家长'),
-      fail: error => this.showToast(error.errMsg || '邀请分享暂不可用'),
+    wx.navigateTo({
+      url: `/pages/class-invite/index?schoolClassId=${assignment.school_class_id}&classLabel=${encodeURIComponent(`${assignment.grade}${assignment.class_name}`)}`,
+      fail: error => this.showToast(error.errMsg || '邀请二维码页面打开失败'),
     })
   },
   onShareAppMessage() {
@@ -192,22 +384,101 @@ Page({
   },
   async handleFinish(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
+    if (!operationId || this.data.loading || this.data.closeCheckOperationId === operationId) {
+      return
+    }
+    const operation = this.data.operations.find(item => item.id === operationId)
+    if (!operation) {
+      this.showToast('接送任务已刷新，请重试')
+      return
+    }
+    this.setData({ closeCheckOperationId: operationId })
+    let modalOpen = false
     try {
       const check = await getPickupCloseCheck(operationId)
+      let dailyExceptionMessages: string[] = []
+      try {
+        const dailyExceptions = await getDailyExceptions(this.data.date, false, { school_class_id: operation.school_class_id, operation_id: operationId })
+        dailyExceptionMessages = dailyExceptions.items
+          .filter(item => item.category !== 'pickup' || item.operation_id === operationId)
+          .slice(0, 4)
+          .map(item => item.message)
+      }
+      catch {
+        // The detailed cross-module checklist is helpful but must not prevent
+        // the pickup state transition when the reporting endpoint is down.
+      }
       if (!check.can_finish) {
-        this.showToast(`还有 ${check.pending.length} 名学生未完成收班确认`)
+        const reasons = uniqueMessages((check.blockers || []).map(item => item.message))
+        if (!reasons.length && check.pending.length) {
+          reasons.push(`还有 ${check.pending.length} 名学生未完成接送状态确认`)
+        }
+        if (!reasons.length && check.pending_photo_count) {
+          reasons.push(`还有 ${check.pending_photo_count} 张接送照片待补`)
+        }
+        this.showCloseCheckModal('暂不能结束接送', reasons.length ? reasons : ['当前任务还未满足结束条件'], false)
+        modalOpen = true
         return
       }
+      const warnings = uniqueMessages((check.warnings || []).map(item => item.message))
+      if (!check.warnings && check.exceptions.length) {
+        warnings.push(...check.exceptions.map(item => item.message))
+      }
+      if (!warnings.length && check.profile_pending_count) {
+        warnings.push(`还有 ${check.profile_pending_count} 名临时学生档案待补`)
+      }
+      warnings.push(...dailyExceptionMessages)
+      this.showCloseCheckModal('收班检查', warnings.length ? warnings.slice(0, 6) : ['接送状态已全部登记，可以结束今天的接送任务'], true, operationId)
+      modalOpen = true
     }
     catch (error) {
       this.showToast(error instanceof Error ? error.message : '收班检查失败')
+    }
+    finally {
+      if (!modalOpen && this.data.closeCheckOperationId === operationId) {
+        this.setData({ closeCheckOperationId: 0 })
+      }
+    }
+  },
+  showCloseCheckModal(title: string, lines: string[], canConfirm: boolean, operationId = 0) {
+    if (typeof wx === 'undefined') {
+      this.setData({ closeCheckOperationId: 0 })
+      if (canConfirm && operationId) {
+        void this.runOperationAction(() => finishPickupOperation(operationId), '接送任务已完成')
+      }
+      else {
+        this.showToast(lines[0] || '收班检查未通过')
+      }
       return
     }
-    await this.runOperationAction(() => finishPickupOperation(operationId), '接送任务已完成')
+    wx.showModal({
+      title,
+      content: lines.map((line, index) => `${index + 1}. ${line}`).join('\n'),
+      confirmText: canConfirm ? '确认结束' : '知道了',
+      showCancel: canConfirm,
+      success: (result) => {
+        if (canConfirm && result.confirm && operationId) {
+          void this.runOperationAction(() => finishPickupOperation(operationId), '接送任务已完成')
+        }
+      },
+      fail: (error) => {
+        this.setData({ closeCheckOperationId: 0 })
+        this.showToast(error.errMsg || '收班检查弹窗打开失败')
+      },
+      complete: () => {
+        this.setData({ closeCheckOperationId: 0 })
+      },
+    })
   },
   handlePhotoCheckIn(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
     const studentId = Number(event.currentTarget.dataset.studentId)
+    this.chooseStudentPhoto(operationId, studentId)
+  },
+  chooseStudentPhoto(operationId: number, studentId: number) {
+    if (!operationId || !studentId || this.data.loading) {
+      return
+    }
     if (typeof wx === 'undefined') {
       return
     }
@@ -242,8 +513,131 @@ Page({
       this.setData({ loading: false })
     }
   },
-  async handleHandover(event: WechatMiniprogram.TouchEvent) {
+  handleBulkSelectionChange(event: WechatMiniprogram.CheckboxGroupChange) {
     const operationId = Number(event.currentTarget.dataset.operationId)
+    if (!operationId) {
+      return
+    }
+    const values = ((event.detail as unknown as { value?: string[] }).value || []).filter(Boolean)
+    const prefix = `${operationId}:`
+    const selectedArrivalKeys = [
+      ...this.data.selectedArrivalKeys.filter(key => !key.startsWith(prefix)),
+      ...values.map(value => `${prefix}${Number(value)}`).filter(key => !key.endsWith(':0')),
+    ]
+    this.setData({ selectedArrivalKeys })
+    this.applyBulkSelection(selectedArrivalKeys)
+  },
+  handleSelectAllArrive(event: WechatMiniprogram.TouchEvent) {
+    const operationId = Number(event.currentTarget.dataset.operationId)
+    const operation = this.data.operations.find(item => item.id === operationId)
+    if (!operation || !operation.bulk_arrival_count) {
+      return
+    }
+    const prefix = `${operationId}:`
+    const selected = new Set(this.data.selectedArrivalKeys)
+    if (operation.all_arrival_selected) {
+      for (const student of operation.students) {
+        selected.delete(`${prefix}${student.student_id}`)
+      }
+    }
+    else {
+      for (const student of operation.students) {
+        if (student.can_bulk_arrive) {
+          selected.add(`${prefix}${student.student_id}`)
+        }
+      }
+    }
+    const selectedArrivalKeys = [...selected]
+    this.setData({ selectedArrivalKeys })
+    this.applyBulkSelection(selectedArrivalKeys)
+  },
+  async handleBulkArrive(event: WechatMiniprogram.TouchEvent) {
+    const operationId = Number(event.currentTarget.dataset.operationId)
+    const operation = this.data.operations.find(item => item.id === operationId)
+    if (!operation || this.data.loading) {
+      return
+    }
+    const prefix = `${operationId}:`
+    const selectedKeys = new Set(this.data.selectedArrivalKeys)
+    const studentIds = operation.students
+      .filter(student => student.can_bulk_arrive && selectedKeys.has(`${prefix}${student.student_id}`))
+      .map(student => student.student_id)
+    if (!studentIds.length) {
+      this.showToast('请先选择需要确认到班的学生')
+      return
+    }
+    const submit = () => this.runOperationAction(
+      async () => {
+        await bulkArrivePickupStudents(operationId, studentIds)
+        this.setData({ selectedArrivalKeys: this.data.selectedArrivalKeys.filter(key => !key.startsWith(prefix)) })
+      },
+      `已确认 ${studentIds.length} 名学生到班`,
+    )
+    if (typeof wx === 'undefined') {
+      await submit()
+      return
+    }
+    wx.showModal({
+      title: '批量确认到班',
+      content: `确认已选择的 ${studentIds.length} 名学生都已安全到达托管班吗？`,
+      success: (result) => {
+        if (result.confirm) {
+          void submit()
+        }
+      },
+    })
+  },
+  handleBatchNotify(event: WechatMiniprogram.TouchEvent) {
+    this.openBatchNotify(Number(event.currentTarget.dataset.operationId))
+  },
+  openBatchNotify(operationId: number) {
+    const operation = this.data.operations.find(item => item.id === operationId)
+    const studentIds = operation?.students.filter(student => !student.is_temporary && student.status !== 'leave').map(student => student.student_id) || []
+    if (!operation || !studentIds.length || typeof wx === 'undefined') {
+      this.showToast('当前班级没有可通知的正式学生')
+      return
+    }
+    wx.showModal({
+      title: '通知本班家长',
+      editable: true,
+      placeholderText: '例如：今天作业较多，请提醒孩子完成后再休息',
+      success: (result) => {
+        const content = result.content?.trim() || ''
+        if (!result.confirm) {
+          return
+        }
+        if (!content) {
+          this.showToast('请输入通知内容')
+          return
+        }
+        void this.runOperationAction(
+          () => createBatchNotification({ student_ids: studentIds, title: '老师通知', content }),
+          `已通知 ${studentIds.length} 位家长`,
+        )
+      },
+    })
+  },
+  applyBulkSelection(selectedArrivalKeys: string[]) {
+    const selected = new Set(selectedArrivalKeys)
+    const operations = this.data.operations.map((operation) => {
+      const prefix = `${operation.id}:`
+      const selectedCount = operation.students.filter(student => student.can_bulk_arrive && selected.has(`${prefix}${student.student_id}`)).length
+      return {
+        ...operation,
+        selected_arrival_count: selectedCount,
+        all_arrival_selected: operation.bulk_arrival_count > 0 && selectedCount === operation.bulk_arrival_count,
+        students: operation.students.map(student => ({
+          ...student,
+          selected_for_bulk: student.can_bulk_arrive && selected.has(`${prefix}${student.student_id}`),
+        })),
+      }
+    })
+    this.setData({ operations })
+  },
+  async handleHandover(event: WechatMiniprogram.TouchEvent) {
+    await this.openHandover(Number(event.currentTarget.dataset.operationId))
+  },
+  async openHandover(operationId: number) {
     const operation = this.data.operations.find(item => item.id === operationId)
     if (!operation || operation.status !== 'started' || this.data.loading || typeof wx === 'undefined') {
       return
@@ -284,7 +678,9 @@ Page({
     }
   },
   async handleViewHandoffs(event: WechatMiniprogram.TouchEvent) {
-    const operationId = Number(event.currentTarget.dataset.operationId)
+    await this.openViewHandoffs(Number(event.currentTarget.dataset.operationId))
+  },
+  async openViewHandoffs(operationId: number) {
     if (!operationId || typeof wx === 'undefined') {
       return
     }
@@ -305,10 +701,97 @@ Page({
       this.showToast(error instanceof Error ? error.message : '交接记录加载失败')
     }
   },
+  handleOpenExceptions() {
+    if (typeof wx !== 'undefined') {
+      wx.navigateTo({ url: '/pages/exceptions/index' })
+    }
+  },
+  handleTaskMoreActions(event: WechatMiniprogram.TouchEvent) {
+    const operationId = Number(event.currentTarget.dataset.operationId)
+    const operation = this.data.operations.find(item => item.id === operationId)
+    if (!operation || (operation.status !== 'confirmed' && operation.status !== 'started') || this.data.loading || typeof wx === 'undefined') {
+      return
+    }
+    const actions = operation.status === 'confirmed'
+      ? [{ label: '临时加学生', action: 'temporary' as const }]
+      : [
+          { label: '临时加学生', action: 'temporary' as const },
+          { label: '通知本班家长', action: 'notify' as const },
+          { label: '途中交接', action: 'handover' as const },
+          { label: '查看交接记录', action: 'handoffs' as const },
+        ]
+    wx.showActionSheet({
+      itemList: actions.map(item => item.label),
+      success: (result) => {
+        const action = actions[result.tapIndex]?.action
+        if (action === 'temporary') {
+          this.openAddTemporaryStudent(operationId)
+        }
+        else if (action === 'notify') {
+          this.openBatchNotify(operationId)
+        }
+        else if (action === 'handover') {
+          void this.openHandover(operationId)
+        }
+        else if (action === 'handoffs') {
+          void this.openViewHandoffs(operationId)
+        }
+      },
+    })
+  },
+  handleStudentMoreActions(event: WechatMiniprogram.TouchEvent) {
+    const operationId = Number(event.currentTarget.dataset.operationId)
+    const studentId = Number(event.currentTarget.dataset.studentId)
+    const operation = this.data.operations.find(item => item.id === operationId)
+    const student = operation?.students.find(item => item.student_id === studentId)
+    if (!operation || !student || operation.status !== 'started' || this.data.loading || typeof wx === 'undefined') {
+      return
+    }
+    const actions: Array<{ label: string, status?: Exclude<PickupMemberStatus, 'planned'>, photo?: boolean }> = student.status === 'planned'
+      ? [
+          { label: '自行到班', status: 'self_arrived' },
+          { label: '家长接走', status: 'parent_picked_up' },
+          { label: '请假', status: 'leave' },
+          { label: '未找到', status: 'absent' },
+          { label: '异常', status: 'abnormal' },
+        ]
+      : student.status === 'picked_up'
+        ? [
+            { label: '补传照片', photo: true },
+            { label: '未到班', status: 'not_arrived' },
+            { label: '异常', status: 'abnormal' },
+          ]
+        : [
+            { label: '中途离班', status: 'midway_left' },
+            { label: '异常', status: 'abnormal' },
+          ]
+    wx.showActionSheet({
+      itemList: actions.map(item => item.label),
+      success: (result) => {
+        const action = actions[result.tapIndex]
+        if (!action) {
+          return
+        }
+        if (action.photo) {
+          this.chooseStudentPhoto(operationId, studentId)
+          return
+        }
+        if (action.status) {
+          this.handleStudentStatus(operationId, studentId, action.status)
+        }
+      },
+    })
+  },
   handleMark(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
     const studentId = Number(event.currentTarget.dataset.studentId)
     const status = event.currentTarget.dataset.status as Exclude<PickupMemberStatus, 'planned'>
+    this.handleStudentStatus(operationId, studentId, status)
+  },
+  handleStudentStatus(operationId: number, studentId: number, status: Exclude<PickupMemberStatus, 'planned'>) {
+    if (!operationId || !studentId || this.data.loading) {
+      return
+    }
     if (status === 'leave' && typeof wx !== 'undefined') {
       wx.showModal({
         title: '口头请假',
@@ -422,7 +905,9 @@ Page({
     }
   },
   async handleAddTemporaryStudent(event: WechatMiniprogram.TouchEvent) {
-    const operationId = Number(event.currentTarget.dataset.operationId)
+    this.openAddTemporaryStudent(Number(event.currentTarget.dataset.operationId))
+  },
+  openAddTemporaryStudent(operationId: number) {
     if (typeof wx === 'undefined') {
       return
     }

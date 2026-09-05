@@ -11,6 +11,7 @@ type Config struct {
 	Auth          AuthConfig          `mapstructure:"auth"`
 	WeChat        WeChatConfig        `mapstructure:"wechat"`
 	SMS           SMSConfig           `mapstructure:"sms"`
+	OCR           OCRConfig           `mapstructure:"ocr"`
 	Storage       StorageConfig       `mapstructure:"storage"`
 	Database      DatabaseConfig      `mapstructure:"database"`
 	Redis         RedisConfig         `mapstructure:"redis"`
@@ -39,6 +40,8 @@ type WeChatConfig struct {
 	Secret              string                       `mapstructure:"app_secret"`
 	Endpoint            string                       `mapstructure:"endpoint"`
 	Timeout             time.Duration                `mapstructure:"timeout"`
+	MiniProgramPage     string                       `mapstructure:"mini_program_page"`
+	MiniProgramEnv      string                       `mapstructure:"mini_program_env_version"`
 	SubscribeTemplateID string                       `mapstructure:"subscribe_template_id"`
 	SubscribePage       string                       `mapstructure:"subscribe_page"`
 	SubscribeTemplates  map[string]string            `mapstructure:"subscribe_templates"`
@@ -63,6 +66,21 @@ type SMSConfig struct {
 	CodeTTL           time.Duration `mapstructure:"code_ttl"`
 	ResendInterval    time.Duration `mapstructure:"resend_interval"`
 	MaxVerifyAttempts int           `mapstructure:"max_verify_attempts"`
+}
+
+// OCRConfig controls homework-photo text extraction for the wrong-question
+// workflow. Secrets must stay on the backend; miniapp/admin only upload images
+// and call the application's own extraction endpoint.
+type OCRConfig struct {
+	Enabled       bool          `mapstructure:"enabled"`
+	Provider      string        `mapstructure:"provider"`
+	SecretID      string        `mapstructure:"secret_id"`
+	SecretKey     string        `mapstructure:"secret_key"`
+	Region        string        `mapstructure:"region"`
+	Endpoint      string        `mapstructure:"endpoint"`
+	Timeout       time.Duration `mapstructure:"timeout"`
+	Action        string        `mapstructure:"action"`
+	MaxImageBytes int64         `mapstructure:"max_image_bytes"`
 }
 
 func (c WeChatConfig) TemplateForKind(kind string) string {
@@ -229,6 +247,8 @@ func (c Config) SanitizedSummary() map[string]any {
 		"wechat_enabled":                      c.WeChat.Enabled,
 		"wechat_app_id_configured":            strings.TrimSpace(c.WeChat.AppID) != "",
 		"wechat_secret_configured":            strings.TrimSpace(c.WeChat.Secret) != "",
+		"wechat_mini_program_page":            c.WeChat.MiniProgramPage,
+		"wechat_mini_program_env_version":     c.WeChat.MiniProgramEnv,
 		"wechat_subscribe_configured":         c.WeChat.HasSubscribeTemplates(),
 		"wechat_subscribe_template_count":     subscribeTemplateCount(c.WeChat.SubscribeTemplates, c.WeChat.SubscribeTemplateID),
 		"sms_enabled":                         c.SMS.Enabled,
@@ -243,6 +263,15 @@ func (c Config) SanitizedSummary() map[string]any {
 		"sms_code_ttl":                        c.SMS.CodeTTL.String(),
 		"sms_resend_interval":                 c.SMS.ResendInterval.String(),
 		"sms_max_verify_attempts":             c.SMS.MaxVerifyAttempts,
+		"ocr_enabled":                         c.OCR.Enabled,
+		"ocr_provider":                        c.OCR.Provider,
+		"ocr_secret_id_configured":            strings.TrimSpace(c.OCR.SecretID) != "",
+		"ocr_secret_key_configured":           strings.TrimSpace(c.OCR.SecretKey) != "",
+		"ocr_region":                          c.OCR.Region,
+		"ocr_endpoint":                        c.OCR.Endpoint,
+		"ocr_action":                          c.OCR.Action,
+		"ocr_timeout":                         c.OCR.Timeout.String(),
+		"ocr_max_image_bytes":                 c.OCR.MaxImageBytes,
 		"storage_provider":                    c.Storage.Provider,
 		"storage_upload_dir":                  c.Storage.UploadDir,
 		"storage_endpoint":                    c.Storage.Endpoint,

@@ -29,6 +29,12 @@ export const overridesPreferences = defineOverridesPreferences({
   shortcutKeys: {
     globalLockScreen: false,
   },
+  tabbar: {
+    enable: false,
+    keepAlive: false,
+    persist: false,
+    visitHistory: false,
+  },
   theme: {
     colorPrimary: 'hsl(148 50% 44%)',
     mode: 'light',

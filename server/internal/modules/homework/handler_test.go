@@ -99,8 +99,15 @@ func TestHomeworkSupportsClassBatchReviewAndParentView(t *testing.T) {
 	if page.Total != 2 {
 		t.Fatalf("batch roster total = %d, want 2", page.Total)
 	}
-	requestHomeworkAs(t, router, teacherPrincipal, http.MethodPost, "/api/v1/homework-tasks/1/students/4/review", `{"status":"completed","correction_note":"书写认真"}`, http.StatusOK)
-	requestHomeworkAs(t, router, teacherPrincipal, http.MethodPost, "/api/v1/homework-tasks/1/students/5/review", `{"status":"incomplete","correction_note":"需要订正"}`, http.StatusOK)
+	batchReview := requestHomeworkAs(t, router, teacherPrincipal, http.MethodPost, "/api/v1/homework-tasks/1/students/bulk-review", `{"items":[{"student_id":4,"status":"completed","correction_note":"书写认真"},{"student_id":5,"status":"incomplete","correction_note":"需要订正"}]}`, http.StatusOK)
+	var batchPage struct {
+		Items []taskStudentView `json:"items"`
+		Total int               `json:"total"`
+	}
+	decodeHomework(t, batchReview, &batchPage)
+	if batchPage.Total != 2 || batchPage.Items[0].Status != StudentStatusCompleted || batchPage.Items[1].Status != StudentStatusIncomplete {
+		t.Fatalf("batch review = %+v", batchPage)
+	}
 	createdNotifications, err = notifications.ListNotifications(ctx, masterdata.DefaultOrganizationID)
 	if err != nil {
 		t.Fatal(err)

@@ -249,6 +249,16 @@ type MarkStudentParams struct {
 	Note         string
 }
 
+// BulkArriveStudentsParams describes the only batch action currently allowed
+// by the pickup workbench. Arrival is intentionally separate from pickup:
+// every school-gate pickup still requires an individual photo and status event.
+type BulkArriveStudentsParams struct {
+	OperationID  uint64
+	StudentIDs   []uint64
+	OperatorName string
+	Note         string
+}
+
 type CorrectEventParams struct {
 	OperationID  uint64
 	EventID      uint64

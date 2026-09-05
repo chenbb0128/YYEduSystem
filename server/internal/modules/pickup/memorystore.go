@@ -289,6 +289,88 @@ func (s *MemoryStore) MarkOperationStudent(ctx context.Context, orgID uint64, pa
 	return OperationStudent{}, fmt.Errorf("%w: student %d", ErrNotFound, params.StudentID)
 }
 
+func (s *MemoryStore) BulkArriveOperationStudents(ctx context.Context, orgID uint64, params BulkArriveStudentsParams) ([]OperationStudent, error) {
+	s.mu.Lock()
+	operation, ok := s.operationLocked(orgID, params.OperationID)
+	if !ok {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%w: operation %d", ErrNotFound, params.OperationID)
+	}
+	if operation.Status != OperationStatusStarted {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%w: operation is %s", ErrInvalidState, operation.Status)
+	}
+
+	studentIDs := uniqueStudentIDs(params.StudentIDs)
+	if len(studentIDs) == 0 {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("%w: no students selected", ErrInvalidState)
+	}
+	members := make(map[uint64]*OperationStudent, len(studentIDs))
+	for index := range s.members {
+		member := &s.members[index]
+		if member.OrganizationID == orgID && member.OperationID == params.OperationID {
+			members[member.StudentID] = member
+		}
+	}
+	for _, studentID := range studentIDs {
+		member, exists := members[studentID]
+		if !exists {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("%w: student %d", ErrNotFound, studentID)
+		}
+		if !IsValidMemberTransition(member.Status, MemberStatusArrived) {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("%w: %s -> %s", ErrInvalidState, member.Status, MemberStatusArrived)
+		}
+	}
+
+	now := time.Now().UTC()
+	notifications := make([]Notification, 0, len(studentIDs))
+	result := make([]OperationStudent, 0, len(studentIDs))
+	for _, studentID := range studentIDs {
+		member := members[studentID]
+		if member.Status != MemberStatusArrived {
+			member.Status = MemberStatusArrived
+			member.CheckedAt = &now
+			member.Note = strings.TrimSpace(params.Note)
+			member.UpdatedAt = now
+			event := Event{ID: s.newID(), OrganizationID: orgID, OperationID: member.OperationID, OperationStudentID: member.ID, StudentID: member.StudentID, EventType: MemberStatusArrived, EventAt: now, OperatorName: strings.TrimSpace(params.OperatorName), PhotoURL: member.PhotoURL, Note: member.Note}
+			s.events = append(s.events, event)
+			operationID := member.OperationID
+			notification := Notification{ID: s.newID(), OrganizationID: orgID, StudentID: member.StudentID, OperationID: &operationID, EventID: &event.ID, RecipientType: "parent", Kind: "pickup_status", Title: pickupNotificationTitle(MemberStatusArrived), Content: fmt.Sprintf("%s：%s", member.StudentName, pickupNotificationContent(MemberStatusArrived)), Status: "pending", CreatedAt: now}
+			s.notifications = append(s.notifications, notification)
+			s.appendNotificationOutboxLocked(notification, now)
+			notifications = append(notifications, notification)
+		}
+		result = append(result, cloneOperationStudent(*member))
+	}
+	hook := s.notificationHook
+	s.mu.Unlock()
+	if hook != nil {
+		for _, notification := range notifications {
+			hook(context.WithoutCancel(ctx), cloneNotification(notification))
+		}
+	}
+	return result, nil
+}
+
+func uniqueStudentIDs(ids []uint64) []uint64 {
+	seen := make(map[uint64]struct{}, len(ids))
+	result := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
 func (s *MemoryStore) CorrectOperationEvent(ctx context.Context, orgID uint64, params CorrectEventParams) (OperationStudent, error) {
 	if params.Status == MemberStatusPlanned || !IsValidMemberStatus(params.Status) || strings.TrimSpace(params.Reason) == "" {
 		return OperationStudent{}, fmt.Errorf("%w: correction is invalid", ErrInvalidState)
@@ -372,16 +454,34 @@ func (s *MemoryStore) FindNotification(_ context.Context, orgID, id uint64) (Not
 }
 
 func (s *MemoryStore) CreateNotification(ctx context.Context, orgID uint64, params CreateNotificationParams) (Notification, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	item := Notification{ID: s.newID(), OrganizationID: orgID, StudentID: params.StudentID, OperationID: cloneID(params.OperationID), EventID: cloneID(params.EventID), RecipientType: "parent", Kind: strings.TrimSpace(params.Kind), Title: strings.TrimSpace(params.Title), Content: strings.TrimSpace(params.Content), Status: "pending", CreatedAt: now}
-	s.notifications = append(s.notifications, item)
-	s.appendNotificationOutboxLocked(item, now)
-	if s.notificationHook != nil {
-		s.notificationHook(context.WithoutCancel(ctx), cloneNotification(item))
+	items, err := s.CreateNotifications(ctx, orgID, []CreateNotificationParams{params})
+	if err != nil {
+		return Notification{}, err
 	}
-	return cloneNotification(item), nil
+	return items[0], nil
+}
+
+func (s *MemoryStore) CreateNotifications(ctx context.Context, orgID uint64, params []CreateNotificationParams) ([]Notification, error) {
+	if len(params) == 0 {
+		return []Notification{}, nil
+	}
+	s.mu.Lock()
+	now := time.Now().UTC()
+	created := make([]Notification, 0, len(params))
+	for _, param := range params {
+		item := Notification{ID: s.newID(), OrganizationID: orgID, StudentID: param.StudentID, OperationID: cloneID(param.OperationID), EventID: cloneID(param.EventID), RecipientType: "parent", Kind: strings.TrimSpace(param.Kind), Title: strings.TrimSpace(param.Title), Content: strings.TrimSpace(param.Content), Status: "pending", CreatedAt: now}
+		s.notifications = append(s.notifications, item)
+		s.appendNotificationOutboxLocked(item, now)
+		created = append(created, cloneNotification(item))
+	}
+	hook := s.notificationHook
+	s.mu.Unlock()
+	if hook != nil {
+		for _, item := range created {
+			hook(context.WithoutCancel(ctx), cloneNotification(item))
+		}
+	}
+	return created, nil
 }
 
 func (s *MemoryStore) ListNotificationOutbox(_ context.Context, now, staleBefore time.Time, limit int) ([]NotificationOutbox, error) {
@@ -650,8 +750,20 @@ func pickupNotificationTitle(status string) string {
 		return "孩子已由家长接走"
 	case MemberStatusLeave:
 		return "孩子今日请假"
-	default:
+	case MemberStatusArrived:
+		return "孩子已确认到班"
+	case MemberStatusLeft:
+		return "孩子已离开托管班"
+	case MemberStatusMidwayLeft:
+		return "孩子已中途离班"
+	case MemberStatusNotArrived:
+		return "孩子尚未到班"
+	case MemberStatusAbnormal:
+		return "孩子接送状态异常"
+	case MemberStatusAbsent:
 		return "孩子今日未到托管班"
+	default:
+		return "孩子接送状态已更新"
 	}
 }
 
@@ -665,8 +777,20 @@ func pickupNotificationContent(status string) string {
 		return "孩子已登记为家长临时接走。"
 	case MemberStatusLeave:
 		return "孩子已登记今日请假。"
-	default:
+	case MemberStatusArrived:
+		return "老师已确认孩子安全到达托管班。"
+	case MemberStatusLeft:
+		return "老师已登记孩子离开托管班。"
+	case MemberStatusMidwayLeft:
+		return "老师已登记孩子中途离开托管班。"
+	case MemberStatusNotArrived:
+		return "老师暂未确认孩子到达托管班，请及时联系老师。"
+	case MemberStatusAbnormal:
+		return "老师已记录接送异常，请及时查看站内通知。"
+	case MemberStatusAbsent:
 		return "孩子已登记为今日未到托管班。"
+	default:
+		return "孩子的接送状态已更新。"
 	}
 }
 

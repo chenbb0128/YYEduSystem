@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "邀请家长",
+  "usingComponents": {
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-toast": "tdesign-miniprogram/toast/toast"
+  }
+}

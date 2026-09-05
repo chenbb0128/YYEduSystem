@@ -1,7 +1,7 @@
 # 豆芽成长助手生产配置模板。
 # 复制后通过部署平台的 Secret/环境变量注入敏感项，不要把真实密钥提交到 Git。
 app:
-  name: douya-growth-helper
+  name: xingya-growth-helper
   env: production
 
 http:
@@ -34,6 +34,8 @@ wechat:
   app_secret: "REPLACE_WITH_WECHAT_APPSECRET"
   endpoint: "https://api.weixin.qq.com/sns/jscode2session"
   timeout: 5s
+  mini_program_page: "pages/parent/index"
+  mini_program_env_version: "release"
   subscribe_page: "pages/parent/index"
   # 在微信公众平台审核通过后，分别填写五类正式模板 ID。
   subscribe_templates:
@@ -68,12 +70,25 @@ sms:
   resend_interval: 60s
   max_verify_attempts: 5
 
+ocr:
+  # 错题集拍照提题。免费方案建议部署本地/内网 RapidOCR 服务，前端不保存任何 OCR 配置。
+  enabled: false
+  provider: rapidocr
+  # provider=tencent 时再通过环境变量注入 secret_id/secret_key；rapidocr 不需要云密钥。
+  secret_id: ""
+  secret_key: ""
+  region: ap-guangzhou
+  endpoint: "http://rapidocr:9009/ocr"
+  action: rapidocr
+  timeout: 10s
+  max_image_bytes: 5242880
+
 storage:
   provider: s3
   upload_dir: ""
   url_signing_secret: "REPLACE_WITH_A_SECOND_RANDOM_SECRET"
   endpoint: "https://oss.example.com"
-  bucket: "douya-growth-private"
+  bucket: "xingya-growth-private"
   region: "cn-shanghai"
   access_key: "REPLACE_WITH_OBJECT_STORAGE_ACCESS_KEY"
   secret_key: "REPLACE_WITH_OBJECT_STORAGE_SECRET_KEY"
@@ -105,7 +120,7 @@ redis:
   ping_timeout: 2s
   pool_size: 20
   min_idle_conns: 5
-  key_prefix: "douya-growth:production"
+  key_prefix: "xingya-growth:production"
 
 worker:
   enabled: true
@@ -118,7 +133,7 @@ worker:
   queues: { default: 1 }
 
 observability:
-  metrics: { enabled: true, path: /metrics, namespace: douya_growth }
+  metrics: { enabled: true, path: /metrics, namespace: xingya_growth }
   tracing: { enabled: false, exporter: stdout, endpoint: localhost:4317, insecure: false, sample_ratio: 0.1 }
 
 log:

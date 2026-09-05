@@ -98,6 +98,8 @@ func TestSanitizedSummaryRedactsSecrets(t *testing.T) {
 	cfg := validConfig()
 	cfg.Database.DSN = "user:secret@tcp(127.0.0.1:3306)/tuoguan_system"
 	cfg.Redis.Password = "redis-secret"
+	cfg.OCR.SecretID = "ocr-id"
+	cfg.OCR.SecretKey = "ocr-secret"
 
 	summary := cfg.SanitizedSummary()
 	if summary["database_dsn"] == cfg.Database.DSN {
@@ -105,6 +107,60 @@ func TestSanitizedSummaryRedactsSecrets(t *testing.T) {
 	}
 	if summary["redis_password"] == cfg.Redis.Password {
 		t.Fatal("SanitizedSummary leaked redis password")
+	}
+	if summary["ocr_secret_id_configured"] != true || summary["ocr_secret_key_configured"] != true {
+		t.Fatalf("SanitizedSummary did not report OCR secret configuration: %#v", summary)
+	}
+	if _, exists := summary["ocr_secret_key"]; exists {
+		t.Fatal("SanitizedSummary exposed OCR secret key")
+	}
+}
+
+func TestOCRValidationRequiresTencentCredentialsWhenEnabled(t *testing.T) {
+	cfg := validConfig()
+	cfg.OCR.Enabled = true
+	cfg.OCR.Provider = "tencent"
+	cfg.OCR.SecretID = ""
+	cfg.OCR.SecretKey = "secret-key"
+	cfg.OCR.Region = "ap-guangzhou"
+	cfg.OCR.Endpoint = "https://ocr.tencentcloudapi.com/"
+	cfg.OCR.Timeout = time.Second
+	cfg.OCR.Action = "GeneralHandwritingOCR"
+	cfg.OCR.MaxImageBytes = 1024
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "ocr.secret_id") {
+		t.Fatalf("Validate() error = %v, want ocr.secret_id error", err)
+	}
+}
+
+func TestOCRValidationAllowsTencentWhenConfigured(t *testing.T) {
+	cfg := validConfig()
+	cfg.OCR.Enabled = true
+	cfg.OCR.Provider = "tencent"
+	cfg.OCR.SecretID = "secret-id"
+	cfg.OCR.SecretKey = "secret-key"
+	cfg.OCR.Region = "ap-guangzhou"
+	cfg.OCR.Endpoint = "https://ocr.tencentcloudapi.com/"
+	cfg.OCR.Timeout = time.Second
+	cfg.OCR.Action = "GeneralHandwritingOCR"
+	cfg.OCR.MaxImageBytes = 1024
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestOCRValidationAllowsRapidOCRWithoutCloudCredentials(t *testing.T) {
+	cfg := validConfig()
+	cfg.OCR.Enabled = true
+	cfg.OCR.Provider = "rapidocr"
+	cfg.OCR.Endpoint = "http://127.0.0.1:9009/ocr"
+	cfg.OCR.Timeout = time.Second
+	cfg.OCR.MaxImageBytes = 1024
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 

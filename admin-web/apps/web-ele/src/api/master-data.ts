@@ -92,6 +92,19 @@ export interface StudentProfilePayload {
   notes: string;
 }
 
+export interface StudentImportIssue {
+  row: number;
+  name?: string;
+  field?: string;
+  reason: string;
+}
+
+export interface StudentImportResult {
+  created: StudentRecord[];
+  skipped_duplicates: StudentImportIssue[];
+  invalid: StudentImportIssue[];
+}
+
 export interface PageResult<T> {
   items: T[];
   total: number;
@@ -169,6 +182,13 @@ export function getStudentsApi(params?: {
 
 export function createStudentProfileApi(data: StudentProfilePayload) {
   return businessRequestClient.post<StudentRecord>('/students/profile', data);
+}
+
+export function importStudentsApi(data: { items: StudentProfilePayload[] }) {
+  return businessRequestClient.post<StudentImportResult>(
+    '/students/import',
+    data,
+  );
 }
 
 export function updateStudentProfileApi(

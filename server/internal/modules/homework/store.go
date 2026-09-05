@@ -17,5 +17,6 @@ type Store interface {
 	CreateTask(context.Context, uint64, CreateTaskParams, []StudentRef) (Task, error)
 	ListTaskStudents(context.Context, uint64, uint64) ([]TaskStudent, error)
 	ReviewStudent(context.Context, uint64, ReviewStudentParams) (TaskStudent, error)
+	BulkReviewStudents(context.Context, uint64, BulkReviewStudentsParams) ([]TaskStudent, error)
 	ListStudentHomework(context.Context, uint64, uint64) ([]StudentHomework, error)
 }

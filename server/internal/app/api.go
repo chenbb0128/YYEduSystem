@@ -37,8 +37,11 @@ import (
 	schedulemysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/schedule/mysqlrepo"
 	summarymodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/summary"
 	summarymysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/summary/mysqlrepo"
+	wrongbookmodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/wrongbook"
+	wrongbookmysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/wrongbook/mysqlrepo"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/database"
 	platformmetrics "github.com/chenbb0128/tuoguan-system-server/internal/platform/metrics"
+	ocrplatform "github.com/chenbb0128/tuoguan-system-server/internal/platform/ocr"
 	redisclient "github.com/chenbb0128/tuoguan-system-server/internal/platform/redis"
 	smsplatform "github.com/chenbb0128/tuoguan-system-server/internal/platform/sms"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
@@ -73,6 +76,8 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	var auditStore auditmodule.Store
 	var mediaStore mediamodule.Store
 	var platformStore platformadmin.Store
+	var wrongbookStore wrongbookmodule.Store
+	var ocrClient ocrplatform.Client
 
 	if cfg.Database.Enabled {
 		openCtx, cancel := context.WithTimeout(context.Background(), cfg.Database.PingTimeout)
@@ -95,6 +100,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		auditStore = auditmysqlrepo.New(db.SQL)
 		mediaStore = mediamysqlrepo.New(db.SQL)
 		platformStore = platformadminmysqlrepo.New(db.SQL)
+		wrongbookStore = wrongbookmysqlrepo.New(db.SQL)
 		checks = append(checks, httpapi.ReadyCheck{
 			Name: "mysql",
 			Check: func(ctx context.Context) error {
@@ -139,6 +145,9 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	}
 	if platformStore == nil {
 		platformStore = platformadmin.NewMemoryStore()
+	}
+	if wrongbookStore == nil {
+		wrongbookStore = wrongbookmodule.NewMemoryStore()
 	}
 	if cfg.Auth.BootstrapAdminEnabled {
 		if err := identity.EnsureConfiguredAdmin(context.Background(), userStore, cfg.Auth.BootstrapAdminUsername, cfg.Auth.BootstrapAdminPassword); err != nil {
@@ -217,6 +226,14 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 		}
 		return nil, fmt.Errorf("unsupported storage provider %q", provider)
 	}
+	createdOCRClient, ocrErr := ocrplatform.NewClient(cfg.OCR)
+	if ocrErr != nil {
+		if db != nil {
+			_ = db.Close()
+		}
+		return nil, fmt.Errorf("configure OCR client: %w", ocrErr)
+	}
+	ocrClient = createdOCRClient
 	pickupHandler := pickup.NewHandler(pickupStore, masterDataStore, photoStore, parentStore)
 	pickupHandler.SetStaffScope(assignmentStore, userStore)
 	pickupHandler.SetAuditWriter(auditStore)
@@ -227,6 +244,12 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	homeworkHandler.SetParentStore(parentStore)
 	homeworkHandler.SetNotificationWriter(pickupStore)
 	homeworkHandler.SetAuditWriter(auditStore)
+	wrongbookHandler := wrongbookmodule.NewHandler(wrongbookStore, masterDataStore)
+	wrongbookHandler.SetStaffScope(assignmentStore, userStore)
+	wrongbookHandler.SetParentStore(parentStore)
+	wrongbookHandler.SetAuditWriter(auditStore)
+	wrongbookHandler.SetUploadReader(uploadReader)
+	wrongbookHandler.SetOCRClient(ocrClient)
 	mealHandler := mealmodule.NewHandler(mealStore, masterDataStore)
 	mealHandler.SetParentStore(parentStore)
 	mealHandler.SetNotificationWriter(pickupStore)
@@ -243,8 +266,10 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	parentHandler.SetStaffScope(assignmentStore)
 	parentHandler.SetUserStore(userStore)
 	parentHandler.SetAuditWriter(auditStore)
+	parentHandler.SetClassInviteSecret(secret)
 	auditHandler := auditmodule.NewHandler(auditStore, masterdata.DefaultOrganizationID)
 	reportHandler := reportmodule.NewHandler(pickupStore, homeworkStore, mealStore, parentStore, masterDataStore, summaryStore, assignmentStore)
+	reportHandler.SetAuditStore(auditStore)
 	photoSigningSecret := strings.TrimSpace(cfg.Storage.URLSigningSecret)
 	if photoSigningSecret == "" {
 		photoSigningSecret = secret
@@ -281,6 +306,8 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			return nil, fmt.Errorf("configure wechat login: %w", wechatErr)
 		}
 		parentHandler.SetCodeExchanger(createdWechat)
+		parentHandler.SetMiniProgramCodeGenerator(createdWechat)
+		parentHandler.SetMiniProgramCodeConfig(cfg.WeChat.MiniProgramPage, cfg.WeChat.MiniProgramEnv)
 	}
 	if cfg.Redis.Enabled {
 		openCtx, cancel := context.WithTimeout(context.Background(), cfg.Redis.PingTimeout)
@@ -374,6 +401,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			assignmentHandler.RegisterRoutes(staff)
 			scheduleHandler.RegisterRoutes(staff)
 			homeworkHandler.RegisterStaffRoutes(staff)
+			wrongbookHandler.RegisterStaffRoutes(staff)
 			masterDataRead := staff.Group("")
 			masterDataRead.Use(teacherMasterDataScope(assignmentStore))
 			masterDataHandler.RegisterReadRoutes(masterDataRead)
@@ -393,6 +421,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 			parents := authenticated.Group("")
 			parents.Use(middleware.RequireParent())
 			homeworkHandler.RegisterParentRoutes(parents)
+			wrongbookHandler.RegisterParentRoutes(parents)
 			parentHandler.RegisterParentRoutes(parents)
 			mealHandler.RegisterParentRoutes(parents)
 			summaryHandler.RegisterParentRoutes(parents)

@@ -321,6 +321,94 @@ func (r *Repository) MarkOperationStudent(ctx context.Context, orgID uint64, par
 	return mapOperationStudentByID(updated), nil
 }
 
+func (r *Repository) BulkArriveOperationStudents(ctx context.Context, orgID uint64, params pickup.BulkArriveStudentsParams) ([]pickup.OperationStudent, error) {
+	studentIDs := uniqueIDs(params.StudentIDs)
+	if len(studentIDs) == 0 {
+		return nil, fmt.Errorf("%w: no students selected", pickup.ErrInvalidState)
+	}
+
+	notifications := make([]pickup.Notification, 0, len(studentIDs))
+	err := r.withTransaction(ctx, func(q *sqlc.Queries) error {
+		operation, err := q.GetPickupOperationByID(ctx, sqlc.GetPickupOperationByIDParams{ID: params.OperationID, OrganizationID: orgID})
+		if err != nil {
+			return translateError(err)
+		}
+		if operation.Status != pickup.OperationStatusStarted {
+			return fmt.Errorf("%w: operation is %s", pickup.ErrInvalidState, operation.Status)
+		}
+
+		members := make(map[uint64]sqlc.GetPickupOperationStudentRow, len(studentIDs))
+		for _, studentID := range studentIDs {
+			member, findErr := q.GetPickupOperationStudent(ctx, sqlc.GetPickupOperationStudentParams{OperationID: params.OperationID, StudentID: studentID, OrganizationID: orgID})
+			if findErr != nil {
+				return translateError(findErr)
+			}
+			if !pickup.IsValidMemberTransition(member.Status, pickup.MemberStatusArrived) {
+				return fmt.Errorf("%w: %s -> %s", pickup.ErrInvalidState, member.Status, pickup.MemberStatusArrived)
+			}
+			members[studentID] = member
+		}
+
+		now := time.Now().UTC()
+		for _, studentID := range studentIDs {
+			member := members[studentID]
+			if member.Status == pickup.MemberStatusArrived {
+				continue
+			}
+			note := strings.TrimSpace(params.Note)
+			result, updateErr := q.UpdatePickupOperationStudent(ctx, sqlc.UpdatePickupOperationStudentParams{Status: pickup.MemberStatusArrived, PhotoUrl: member.PhotoUrl, CheckedAt: sql.NullTime{Time: now, Valid: true}, Note: note, OperationID: params.OperationID, StudentID: studentID, OrganizationID: orgID})
+			if updateErr != nil {
+				return translateError(updateErr)
+			}
+			if updateErr = ensureAffected(result); updateErr != nil {
+				return updateErr
+			}
+			eventResult, eventErr := q.CreatePickupEvent(ctx, sqlc.CreatePickupEventParams{OrganizationID: orgID, OperationID: params.OperationID, OperationStudentID: member.OperationStudentID, StudentID: studentID, EventType: pickup.MemberStatusArrived, EventAt: now, OperatorName: strings.TrimSpace(params.OperatorName), PhotoUrl: member.PhotoUrl, Note: note})
+			if eventErr != nil {
+				return translateError(eventErr)
+			}
+			eventID, eventErr := insertedID(eventResult)
+			if eventErr != nil {
+				return eventErr
+			}
+			operationID := params.OperationID
+			title := pickupNotificationTitle(pickup.MemberStatusArrived)
+			content := fmt.Sprintf("%s：%s", member.StudentName, pickupNotificationContent(pickup.MemberStatusArrived))
+			notificationResult, notificationErr := q.CreateNotification(ctx, sqlc.CreateNotificationParams{OrganizationID: orgID, StudentID: studentID, OperationID: sql.NullInt64{Int64: int64(operationID), Valid: true}, EventID: sql.NullInt64{Int64: int64(eventID), Valid: true}, Kind: "pickup_status", Title: title, Content: content})
+			if notificationErr != nil {
+				return translateError(notificationErr)
+			}
+			notificationID, notificationErr := insertedID(notificationResult)
+			if notificationErr != nil {
+				return notificationErr
+			}
+			if _, notificationErr = q.CreateNotificationOutbox(ctx, sqlc.CreateNotificationOutboxParams{OrganizationID: orgID, AggregateID: notificationID, NotificationID: notificationID, JSONOBJECT: notificationID}); notificationErr != nil {
+				return translateError(notificationErr)
+			}
+			notifications = append(notifications, pickup.Notification{ID: notificationID, OrganizationID: orgID, StudentID: studentID, OperationID: &operationID, EventID: &eventID, RecipientType: "parent", Kind: "pickup_status", Title: title, Content: content, Status: "pending", CreatedAt: now})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]pickup.OperationStudent, 0, len(studentIDs))
+	for _, studentID := range studentIDs {
+		item, findErr := r.queries.GetPickupOperationStudent(ctx, sqlc.GetPickupOperationStudentParams{OperationID: params.OperationID, StudentID: studentID, OrganizationID: orgID})
+		if findErr != nil {
+			return nil, translateError(findErr)
+		}
+		result = append(result, mapOperationStudentByID(item))
+	}
+	if r.notificationHook != nil {
+		for _, notification := range notifications {
+			r.notificationHook(context.WithoutCancel(ctx), notification)
+		}
+	}
+	return result, nil
+}
+
 func (r *Repository) CorrectOperationEvent(ctx context.Context, orgID uint64, params pickup.CorrectEventParams) (pickup.OperationStudent, error) {
 	if params.Status == pickup.MemberStatusPlanned || !pickup.IsValidMemberStatus(params.Status) || strings.TrimSpace(params.Reason) == "" {
 		return pickup.OperationStudent{}, fmt.Errorf("%w: correction is invalid", pickup.ErrInvalidState)
@@ -421,32 +509,55 @@ func (r *Repository) FindNotification(ctx context.Context, orgID, id uint64) (pi
 }
 
 func (r *Repository) CreateNotification(ctx context.Context, orgID uint64, params pickup.CreateNotificationParams) (pickup.Notification, error) {
-	var id uint64
-	err := r.withTransaction(ctx, func(q *sqlc.Queries) error {
-		result, err := q.CreateNotification(ctx, sqlc.CreateNotificationParams{OrganizationID: orgID, StudentID: params.StudentID, OperationID: nullID(params.OperationID), EventID: nullID(params.EventID), Kind: strings.TrimSpace(params.Kind), Title: strings.TrimSpace(params.Title), Content: strings.TrimSpace(params.Content)})
-		if err != nil {
-			return translateError(err)
-		}
-		id, err = insertedID(result)
-		if err != nil {
-			return err
-		}
-		if _, err := q.CreateNotificationOutbox(ctx, sqlc.CreateNotificationOutboxParams{OrganizationID: orgID, AggregateID: id, NotificationID: id, JSONOBJECT: id}); err != nil {
-			return translateError(err)
+	items, err := r.CreateNotifications(ctx, orgID, []pickup.CreateNotificationParams{params})
+	if err != nil {
+		return pickup.Notification{}, err
+	}
+	return items[0], nil
+}
+
+func (r *Repository) CreateNotifications(ctx context.Context, orgID uint64, params []pickup.CreateNotificationParams) ([]pickup.Notification, error) {
+	if len(params) == 0 {
+		return []pickup.Notification{}, nil
+	}
+	ids := make([]uint64, 0, len(params))
+	if err := r.withTransaction(ctx, func(q *sqlc.Queries) error {
+		for _, param := range params {
+			result, err := q.CreateNotification(ctx, sqlc.CreateNotificationParams{
+				OrganizationID: orgID, StudentID: param.StudentID, OperationID: nullID(param.OperationID),
+				EventID: nullID(param.EventID), Kind: strings.TrimSpace(param.Kind),
+				Title: strings.TrimSpace(param.Title), Content: strings.TrimSpace(param.Content),
+			})
+			if err != nil {
+				return translateError(err)
+			}
+			id, err := insertedID(result)
+			if err != nil {
+				return err
+			}
+			if _, err := q.CreateNotificationOutbox(ctx, sqlc.CreateNotificationOutboxParams{OrganizationID: orgID, AggregateID: id, NotificationID: id, JSONOBJECT: id}); err != nil {
+				return translateError(err)
+			}
+			ids = append(ids, id)
 		}
 		return nil
-	})
-	if err != nil {
-		return pickup.Notification{}, err
+	}); err != nil {
+		return nil, err
 	}
-	item, err := r.FindNotification(ctx, orgID, id)
-	if err != nil {
-		return pickup.Notification{}, err
+	created := make([]pickup.Notification, 0, len(ids))
+	for _, id := range ids {
+		item, err := r.FindNotification(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, item)
 	}
 	if r.notificationHook != nil {
-		r.notificationHook(context.WithoutCancel(ctx), item)
+		for _, item := range created {
+			r.notificationHook(context.WithoutCancel(ctx), item)
+		}
 	}
-	return item, nil
+	return created, nil
 }
 
 func (r *Repository) ListNotificationOutbox(ctx context.Context, now, staleBefore time.Time, limit int) ([]pickup.NotificationOutbox, error) {
@@ -721,6 +832,22 @@ func validOperationTransition(from, to string) bool {
 	return ((from == pickup.OperationStatusDraft || from == pickup.OperationStatusConfirmed) && to == pickup.OperationStatusStarted) || (from == pickup.OperationStatusStarted && to == pickup.OperationStatusFinished)
 }
 
+func uniqueIDs(ids []uint64) []uint64 {
+	seen := make(map[uint64]struct{}, len(ids))
+	result := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
 func defaultRole(value string) string {
 	switch strings.TrimSpace(value) {
 	case "lead", "collaborator", "substitute":
@@ -751,8 +878,20 @@ func pickupNotificationTitle(status string) string {
 		return "孩子已由家长接走"
 	case pickup.MemberStatusLeave:
 		return "孩子今日请假"
-	default:
+	case pickup.MemberStatusArrived:
+		return "孩子已确认到班"
+	case pickup.MemberStatusLeft:
+		return "孩子已离开托管班"
+	case pickup.MemberStatusMidwayLeft:
+		return "孩子已中途离班"
+	case pickup.MemberStatusNotArrived:
+		return "孩子尚未到班"
+	case pickup.MemberStatusAbnormal:
+		return "孩子接送状态异常"
+	case pickup.MemberStatusAbsent:
 		return "孩子今日未到托管班"
+	default:
+		return "孩子接送状态已更新"
 	}
 }
 func pickupNotificationContent(status string) string {
@@ -765,8 +904,20 @@ func pickupNotificationContent(status string) string {
 		return "孩子已登记为家长临时接走。"
 	case pickup.MemberStatusLeave:
 		return "孩子已登记今日请假。"
-	default:
+	case pickup.MemberStatusArrived:
+		return "老师已确认孩子安全到达托管班。"
+	case pickup.MemberStatusLeft:
+		return "老师已登记孩子离开托管班。"
+	case pickup.MemberStatusMidwayLeft:
+		return "老师已登记孩子中途离开托管班。"
+	case pickup.MemberStatusNotArrived:
+		return "老师暂未确认孩子到达托管班，请及时联系老师。"
+	case pickup.MemberStatusAbnormal:
+		return "老师已记录接送异常，请及时查看站内通知。"
+	case pickup.MemberStatusAbsent:
 		return "孩子已登记为今日未到托管班。"
+	default:
+		return "孩子的接送状态已更新。"
 	}
 }
 

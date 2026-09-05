@@ -125,3 +125,10 @@ type UpdateStudentParams struct {
 	Status           string
 	Notes            string
 }
+
+// BulkCreateStudentsParams is the storage boundary for a validated import.
+// The handler resolves human-friendly school/class names before reaching this
+// layer, so the repository can insert the whole batch atomically.
+type BulkCreateStudentsParams struct {
+	Items []CreateStudentParams
+}

@@ -1,6 +1,7 @@
 import type { ChildApplication } from '@/services/child-applications'
 import { getStoredPhoneLoginPhone } from '@/services/auth'
 import { createParentChildApplication, getParentChildApplications, updateParentChildApplication } from '@/services/child-applications'
+import { clearPendingClassInviteToken, getClassInvite, getPendingClassInviteToken } from '@/services/class-invites'
 import { getParentMe } from '@/services/parent'
 import { isRequestError } from '@/services/request'
 import { useAppStore } from '@/stores'
@@ -25,12 +26,29 @@ function toApplicationView(item: ChildApplication): ChildApplicationView {
   return { ...item, status_label: applicationStatusLabels[item.status] || item.status }
 }
 
+function decodeInviteToken(value: string | undefined) {
+  if (!value) {
+    return ''
+  }
+  try {
+    return decodeURIComponent(value)
+  }
+  catch {
+    return value
+  }
+}
+
 Page({
   data: {
     loading: false,
     hasBoundChild: false,
     applications: [] as ChildApplicationView[],
     invitedSchoolClassID: 0,
+    inviteToken: '',
+    inviteClassLabel: '',
+    inviteLoading: false,
+    inviteError: '',
+    isInvited: false,
     editingApplicationID: 0,
     editingSchoolClassID: 0,
     editingOriginalSchoolName: '',
@@ -41,15 +59,22 @@ Page({
     guardianName: '',
     guardianPhone: '',
     relationship: '',
+    optionalVisible: false,
     focusedField: '' as ParentFormField | '',
     applicationNotes: '',
   },
   onLoad(options: Record<string, string | undefined> = {}) {
     const invitedSchoolClassID = Number(options.schoolClassId || 0)
+    const inviteToken = decodeInviteToken(options.inviteToken || options.scene || getPendingClassInviteToken())
     this.setData({
       invitedSchoolClassID: Number.isFinite(invitedSchoolClassID) ? invitedSchoolClassID : 0,
+      inviteToken,
+      isInvited: Boolean(invitedSchoolClassID || inviteToken),
       guardianPhone: getStoredPhoneLoginPhone(),
     })
+    if (inviteToken) {
+      void this.loadClassInvite(inviteToken)
+    }
     void this.loadApplicationData()
   },
   onShow() {
@@ -59,9 +84,12 @@ Page({
     this.setData({ loading: true })
     try {
       const [me, applications] = await Promise.all([getParentMe(), getParentChildApplications()])
+      const applicationViews = applications.items.map(toApplicationView)
+      const existingPhone = this.data.guardianPhone.trim() || applicationViews[0]?.guardian_phone || getStoredPhoneLoginPhone()
       this.setData({
         hasBoundChild: (me.children || []).length > 0,
-        applications: applications.items.map(toApplicationView),
+        applications: applicationViews,
+        guardianPhone: existingPhone,
       })
     }
     catch (error) {
@@ -73,6 +101,19 @@ Page({
     }
     finally {
       this.setData({ loading: false })
+    }
+  },
+  async loadClassInvite(token: string) {
+    this.setData({ inviteLoading: true, inviteError: '' })
+    try {
+      const invite = await getClassInvite(token)
+      this.setData({ invitedSchoolClassID: invite.school_class_id, inviteClassLabel: invite.label || `${invite.grade}${invite.class_name}`, isInvited: true })
+    }
+    catch (error) {
+      this.setData({ inviteError: error instanceof Error ? error.message : '班级邀请无效，请让老师重新生成二维码' })
+    }
+    finally {
+      this.setData({ inviteLoading: false })
     }
   },
   handleInput(event: WechatMiniprogram.Input) {
@@ -92,8 +133,12 @@ Page({
   async handleSubmitApplication() {
     const childName = this.data.childName.trim()
     const guardianPhone = this.data.guardianPhone.trim()
-    if (!childName || !guardianPhone) {
-      this.showToast('请填写孩子姓名和家长手机号')
+    if (!childName) {
+      this.showToast('请填写孩子姓名')
+      return
+    }
+    if (this.data.inviteToken && !this.data.invitedSchoolClassID) {
+      this.showToast(this.data.inviteLoading ? '正在确认班级邀请，请稍候' : '班级邀请无效，请重新扫描二维码')
       return
     }
     const retainsExistingClass = Boolean(
@@ -113,8 +158,9 @@ Page({
         school_name: this.data.schoolName.trim(),
         grade: this.data.classText.trim(),
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
+        ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),
-        guardian_phone: guardianPhone,
+        ...(guardianPhone ? { guardian_phone: guardianPhone } : {}),
         relationship: this.data.relationship.trim() || '家长',
         notes: this.data.applicationNotes.trim(),
       }
@@ -136,9 +182,13 @@ Page({
         guardianName: '',
         guardianPhone: getStoredPhoneLoginPhone(),
         relationship: '',
+        optionalVisible: false,
         applicationNotes: '',
         focusedField: '',
       })
+      if (this.data.inviteToken) {
+        clearPendingClassInviteToken()
+      }
       await this.loadApplicationData()
     }
     catch (error) {
@@ -167,11 +217,15 @@ Page({
       guardianName: application.guardian_name,
       guardianPhone: application.guardian_phone || getStoredPhoneLoginPhone(),
       relationship: application.relationship || '',
+      optionalVisible: true,
       applicationNotes: application.notes,
       editingOriginalSchoolName: application.school_name_input,
       editingOriginalClassText: [application.grade_input, application.class_name_input].filter(Boolean).join('') || application.grade || application.class_name,
     })
     this.showToast('已带入原申请，请补充资料后重新提交')
+  },
+  toggleOptionalInfo() {
+    this.setData({ optionalVisible: !this.data.optionalVisible })
   },
   handleRefresh() {
     void this.loadApplicationData()

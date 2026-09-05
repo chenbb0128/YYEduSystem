@@ -19,10 +19,11 @@ const duplicateEntryErrorNumber uint16 = 1062
 
 type Repository struct {
 	queries *sqlc.Queries
+	exec    database.DBTX
 }
 
 func New(exec database.DBTX) *Repository {
-	return &Repository{queries: sqlc.New(exec)}
+	return &Repository{queries: sqlc.New(exec), exec: exec}
 }
 
 func (r *Repository) ListSchools(ctx context.Context, orgID uint64) ([]masterdata.School, error) {
@@ -171,6 +172,71 @@ func (r *Repository) CreateStudent(ctx context.Context, orgID uint64, params mas
 		return masterdata.Student{}, err
 	}
 	return r.FindStudent(ctx, orgID, id)
+}
+
+func (r *Repository) BulkCreateStudents(ctx context.Context, orgID uint64, params masterdata.BulkCreateStudentsParams) ([]masterdata.Student, error) {
+	if len(params.Items) == 0 {
+		return []masterdata.Student{}, nil
+	}
+	ids := make([]uint64, 0, len(params.Items))
+	if err := r.withTransaction(ctx, func(q *sqlc.Queries) error {
+		for _, item := range params.Items {
+			result, err := q.CreateStudent(ctx, sqlc.CreateStudentParams{
+				OrganizationID: orgID, SchoolID: item.SchoolID, TermID: item.TermID,
+				SchoolClassID: item.SchoolClassID, CareClassID: nullID(item.CareClassID),
+				Name: item.Name, Gender: item.Gender, BirthDate: nullTime(item.BirthDate),
+				StudentNo: item.StudentNo, GuardianPhone: item.GuardianPhone,
+				EmergencyContact: item.EmergencyContact, EmergencyPhone: item.EmergencyPhone,
+				Status: "active", Notes: item.Notes,
+			})
+			if err != nil {
+				return translateError(err)
+			}
+			id, err := insertedID(result)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	created := make([]masterdata.Student, 0, len(ids))
+	for _, id := range ids {
+		item, err := r.FindStudent(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, item)
+	}
+	return created, nil
+}
+
+func (r *Repository) withTransaction(ctx context.Context, fn func(*sqlc.Queries) error) (err error) {
+	beginner, ok := r.exec.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	})
+	if !ok {
+		return fn(r.queries)
+	}
+	tx, err := beginner.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			_ = tx.Rollback()
+			panic(recovered)
+		}
+		if err != nil {
+			err = errors.Join(err, tx.Rollback())
+		}
+	}()
+	if err = fn(r.queries.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) FindStudent(ctx context.Context, orgID, id uint64) (masterdata.Student, error) {

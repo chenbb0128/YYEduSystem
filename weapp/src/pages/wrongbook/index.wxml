@@ -1,0 +1,168 @@
+<view class="page wrongbook-page">
+  <view class="page-header wrongbook-header">
+    <view class="page-header__identity">
+      <view class="brand-emblem">错</view>
+      <view>
+        <view class="page-eyebrow">豆芽成长助手 · {{mode === 'parent' ? '家长复习' : '教师整理'}}</view>
+        <view class="page-title">学生错题集</view>
+        <view class="page-subtitle">{{mode === 'parent' ? '把老师整理的错题变成复习清单' : '拍照提题，勾选后保存到学生错题集'}}</view>
+      </view>
+    </view>
+    <view class="page-helper">{{loading ? '同步中…' : questions.length + ' 道错题'}}</view>
+  </view>
+
+  <view class="content-card wrongbook-control-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">错题对象</view>
+        <view class="section-title">{{selectedStudentName || '选择学生'}}</view>
+      </view>
+      <view class="status-pill status-tone-success">{{mode === 'parent' ? '家长查看' : '老师维护'}}</view>
+    </view>
+    <view wx:if="{{mode === 'teacher'}}" class="control-field">
+      <text class="field-label">学生</text>
+      <picker mode="selector" range="{{studentOptions}}" value="{{studentIndex}}" bindchange="handleStudentChange">
+        <view class="picker-input">{{studentOptions[studentIndex] || '暂无学生'}}<text class="picker-arrow">⌄</text></view>
+      </picker>
+    </view>
+    <view class="wrongbook-filter-row">
+      <view class="filter-field">
+        <text class="field-label">学科</text>
+        <view class="field-control"><input class="field-input" data-field="subject" value="{{subject}}" placeholder="{{focusedField === 'subject' ? '' : '数学 / 语文 / 英语'}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+      </view>
+      <view class="filter-field">
+        <text class="field-label">状态</text>
+        <picker mode="selector" range="{{statusOptions}}" bindchange="handleStatusChange">
+          <view class="picker-input">{{statusFilter === 'active' ? '待复习' : statusFilter === 'mastered' ? '已掌握' : statusFilter === 'archived' ? '已归档' : '全部'}}<text class="picker-arrow">⌄</text></view>
+        </picker>
+      </view>
+    </view>
+    <view class="control-field">
+      <text class="field-label">搜索题目</text>
+      <view class="field-control"><input class="field-input" data-field="keyword" value="{{keyword}}" placeholder="{{focusedField === 'keyword' ? '' : '输入关键词、知识点或老师备注'}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+    </view>
+    <view class="button-row control-actions">
+      <t-button size="small" theme="primary" loading="{{loading}}" bind:tap="handleSearch">筛选</t-button>
+      <t-button size="small" variant="outline" loading="{{loading}}" bind:tap="handleClearSearch">重置</t-button>
+      <t-button size="small" theme="warning" loading="{{submitting}}" bind:tap="handleGeneratePaper">生成复习卷</t-button>
+    </view>
+  </view>
+
+  <view wx:if="{{mode === 'teacher'}}" class="content-card extract-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">拍照提题</view>
+        <view class="section-title">把作业照片整理成候选题</view>
+      </view>
+      <t-button size="small" theme="primary" loading="{{submitting}}" bind:tap="choosePhotoAndExtract">拍照 / 上传</t-button>
+    </view>
+    <view class="muted-text extract-tip">当前可先上传作业照片并生成待校对题目卡片；如果已有 OCR 文本，也可以粘贴后按题号自动拆分。</view>
+    <image wx:if="{{sourceImageSigned}}" class="source-preview" mode="aspectFill" src="{{sourceImageSigned}}" />
+    <view class="control-field">
+      <text class="field-label">题目文字（可选，用于本地拆题）</text>
+      <textarea class="field-textarea" data-field="extractionText" value="{{extractionText}}" placeholder="{{focusedField === 'extractionText' ? '' : '例如：1. 计算 38+27=  2. 解方程...'}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
+    </view>
+    <view class="button-row">
+      <t-button size="small" variant="outline" loading="{{submitting}}" bind:tap="runExtractFromText">重新提取</t-button>
+      <t-button wx:if="{{candidates.length}}" size="small" theme="success" loading="{{submitting}}" bind:tap="saveSelectedCandidates">保存选中错题</t-button>
+    </view>
+    <view wx:if="{{extractionMocked}}" class="warning-note extract-warning">当前未配置真实 OCR，系统生成的是待校对卡片。请老师把题目内容改准确后再保存。</view>
+    <view wx:if="{{candidates.length}}" class="candidate-list">
+      <view wx:for="{{candidates}}" wx:key="temp_id" class="candidate-card {{item.selected ? 'candidate-card-active' : ''}}">
+        <view class="candidate-head" data-index="{{index}}" bind:tap="handleCandidateToggle">
+          <view class="candidate-check">{{item.selected ? '✓' : ''}}</view>
+          <view>
+            <view class="candidate-title">候选题 {{index + 1}}</view>
+            <view class="candidate-confidence">识别置信度 {{item.confidence}}</view>
+          </view>
+        </view>
+        <textarea class="field-textarea candidate-textarea" data-index="{{index}}" data-field="question_text" value="{{item.question_text}}" placeholder="题目内容" bindinput="handleCandidateInput" />
+        <view class="wrongbook-filter-row">
+          <view class="filter-field"><text class="field-label">答案</text><input class="field-input mini-input" data-index="{{index}}" data-field="answer_text" value="{{item.answer_text}}" placeholder="可选" bindinput="handleCandidateInput" /></view>
+          <view class="filter-field"><text class="field-label">知识点</text><input class="field-input mini-input" data-index="{{index}}" data-field="knowledge_point" value="{{item.knowledge_point}}" placeholder="可选" bindinput="handleCandidateInput" /></view>
+        </view>
+        <input class="field-input mini-input" data-index="{{index}}" data-field="explanation" value="{{item.explanation}}" placeholder="改正提示 / 解析（可选）" bindinput="handleCandidateInput" />
+      </view>
+    </view>
+  </view>
+
+  <view class="content-card wrong-question-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">错题清单</view>
+        <view class="section-title">{{selectedStudentName || '学生'}} 的错题</view>
+      </view>
+      <view class="section-note">勾选后生成复习卷</view>
+    </view>
+    <block wx:if="{{questions.length}}">
+      <view wx:for="{{questions}}" wx:key="id" class="wrong-question-row">
+        <view class="question-check" data-id="{{item.id}}" bind:tap="handleQuestionSelect">{{item.selected_for_paper ? '✓' : ''}}</view>
+        <view class="question-main">
+          <view class="question-title-line">
+            <view class="question-subject">{{item.subject}}</view>
+            <view class="status-pill {{item.status === 'active' ? 'status-tone-warning' : item.status === 'mastered' ? 'status-tone-success' : 'status-tone-muted'}}">{{item.status_label}}</view>
+          </view>
+          <view class="question-text">{{item.question_text}}</view>
+          <view wx:if="{{item.answer_text}}" class="question-answer">答案：{{item.answer_text}}</view>
+          <view wx:if="{{item.knowledge_point}}" class="question-meta">知识点：{{item.knowledge_point}}</view>
+          <view wx:if="{{item.teacher_note}}" class="record-note">老师备注：{{item.teacher_note}}</view>
+          <image wx:if="{{item.source_image_signed}}" class="question-photo" mode="aspectFill" src="{{item.source_image_signed}}" />
+          <view class="question-footer">
+            <text>{{item.created_label}} · {{item.created_by_name || '老师'}}</text>
+            <view wx:if="{{mode === 'teacher'}}" class="question-actions">
+              <text data-id="{{item.id}}" data-status="mastered" bind:tap="handleQuestionStatus">已掌握</text>
+              <text data-id="{{item.id}}" data-status="active" bind:tap="handleQuestionStatus">待复习</text>
+              <text data-id="{{item.id}}" data-status="archived" bind:tap="handleQuestionStatus">归档</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+    <t-empty wx:else description="暂时没有错题" />
+  </view>
+
+  <view class="content-card wrong-paper-card">
+    <view class="section-head">
+      <view>
+        <view class="section-kicker">复习卷</view>
+        <view class="section-title">已生成复习卷</view>
+      </view>
+      <view class="section-note">{{papers.length}} 份</view>
+    </view>
+    <block wx:if="{{papers.length}}">
+      <view wx:for="{{papers}}" wx:key="id" class="paper-row" data-id="{{item.id}}" bind:tap="handleOpenPaper">
+        <view class="paper-icon">卷</view>
+        <view class="paper-copy">
+          <view class="paper-title">{{item.title}}</view>
+          <view class="paper-meta">{{item.question_count}} 道题 · {{item.source_label}} · {{item.created_label}}</view>
+        </view>
+        <view class="paper-arrow">›</view>
+      </view>
+    </block>
+    <t-empty wx:else description="还没有生成复习卷" />
+  </view>
+
+  <t-popup visible="{{paperVisible}}" placement="bottom" bind:visible-change="closePaper">
+    <view class="paper-sheet">
+      <view class="sheet-handle"></view>
+      <view class="sheet-header">
+        <view>
+          <view class="section-kicker">错题复习卷</view>
+          <view class="section-title">{{currentPaper ? currentPaper.title : '复习卷'}}</view>
+        </view>
+        <view class="text-link" bind:tap="closePaper">关闭</view>
+      </view>
+      <view class="paper-summary">{{currentPaper ? currentPaper.student_name : '学生'}} · 共 {{currentPaper ? currentPaper.question_count : 0}} 道题</view>
+      <view wx:for="{{currentPaper ? currentPaper.questions : []}}" wx:key="id" class="paper-question">
+        <view class="paper-question-index">{{index + 1}}</view>
+        <view class="paper-question-main">
+          <view class="paper-question-text">{{item.question_text}}</view>
+          <view wx:if="{{item.answer_text}}" class="paper-question-answer">参考答案：{{item.answer_text}}</view>
+          <view wx:if="{{item.explanation}}" class="paper-question-answer">提示：{{item.explanation}}</view>
+        </view>
+      </view>
+    </view>
+  </t-popup>
+
+  <t-toast id="t-toast" />
+</view>

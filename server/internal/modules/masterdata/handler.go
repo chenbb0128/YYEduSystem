@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ func (h *Handler) RegisterWriteRoutes(api *gin.RouterGroup) {
 	api.POST("/care-classes", h.createCareClass)
 	api.POST("/students", h.createStudent)
 	api.POST("/students/profile", h.createStudentProfile)
+	api.POST("/students/import", h.importStudents)
 	api.PUT("/students/:id", h.updateStudent)
 	api.PUT("/students/:id/profile", h.updateStudentProfile)
 }
@@ -232,6 +234,33 @@ type studentProfileRequest struct {
 	EmergencyPhone   string `json:"emergency_phone"`
 	Status           string `json:"status"`
 	Notes            string `json:"notes"`
+}
+
+type studentImportRequest struct {
+	Items []studentProfileRequest `json:"items"`
+}
+
+func (r studentImportRequest) Validate() []response.ValidationDetail {
+	if len(r.Items) == 0 {
+		return []response.ValidationDetail{{Field: "items", Reason: "required"}}
+	}
+	if len(r.Items) > 500 {
+		return []response.ValidationDetail{{Field: "items", Reason: "too_many"}}
+	}
+	return nil
+}
+
+type studentImportIssue struct {
+	Row    int    `json:"row"`
+	Name   string `json:"name,omitempty"`
+	Field  string `json:"field,omitempty"`
+	Reason string `json:"reason"`
+}
+
+type studentImportResult struct {
+	Created           []studentView        `json:"created"`
+	SkippedDuplicates []studentImportIssue `json:"skipped_duplicates"`
+	Invalid           []studentImportIssue `json:"invalid"`
 }
 
 func (r studentProfileRequest) Validate() []response.ValidationDetail {
@@ -519,6 +548,7 @@ func (h *Handler) createStudentProfile(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+	req = normalizeStudentProfileRequest(req)
 	params, err := h.resolveStudentProfile(c.Request.Context(), req, 0)
 	if err != nil {
 		respondStoreError(c, err)
@@ -530,6 +560,72 @@ func (h *Handler) createStudentProfile(c *gin.Context) {
 		return
 	}
 	response.Created(c, "/api/v1/students/"+strconv.FormatUint(item.ID, 10), toStudentView(item))
+}
+
+func (h *Handler) importStudents(c *gin.Context) {
+	var req studentImportRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	existing, err := h.store.ListStudents(c.Request.Context(), orgID)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+
+	seen := make(map[string]struct{}, len(existing)+len(req.Items))
+	for _, item := range existing {
+		if item.Status == "active" {
+			seen[studentDuplicateKey(CreateStudentParams{SchoolClassID: item.SchoolClassID, Name: item.Name, StudentNo: item.StudentNo, GuardianPhone: item.GuardianPhone})] = struct{}{}
+		}
+	}
+	valid := make([]CreateStudentParams, 0, len(req.Items))
+	result := studentImportResult{Created: []studentView{}, SkippedDuplicates: []studentImportIssue{}, Invalid: []studentImportIssue{}}
+	for index, item := range req.Items {
+		row := index + 2 // row one is the CSV header shown in the import template.
+		if details := item.Validate(); len(details) > 0 {
+			for _, detail := range details {
+				result.Invalid = append(result.Invalid, studentImportIssue{Row: row, Name: strings.TrimSpace(item.Name), Field: detail.Field, Reason: detail.Reason})
+			}
+			continue
+		}
+		item = normalizeStudentProfileRequest(item)
+		params, resolveErr := h.resolveStudentProfile(c.Request.Context(), item, 0)
+		if resolveErr != nil {
+			result.Invalid = append(result.Invalid, studentImportIssue{Row: row, Name: strings.TrimSpace(item.Name), Reason: importErrorReason(resolveErr)})
+			continue
+		}
+		key := studentDuplicateKey(params)
+		if _, exists := seen[key]; exists {
+			result.SkippedDuplicates = append(result.SkippedDuplicates, studentImportIssue{Row: row, Name: params.Name, Reason: "duplicate_student"})
+			continue
+		}
+		seen[key] = struct{}{}
+		valid = append(valid, params)
+	}
+	if len(valid) > 0 {
+		created, createErr := h.store.BulkCreateStudents(c.Request.Context(), orgID, BulkCreateStudentsParams{Items: valid})
+		if createErr != nil {
+			respondStoreError(c, createErr)
+			return
+		}
+		for _, item := range created {
+			result.Created = append(result.Created, toStudentView(item))
+		}
+	}
+	response.OK(c, result)
+}
+
+func importErrorReason(err error) string {
+	if errors.Is(err, ErrNotFound) {
+		return "related_resource_not_found"
+	}
+	if errors.Is(err, ErrConflict) {
+		return "related_resource_conflict"
+	}
+	return "resolve_failed"
 }
 
 func (h *Handler) updateStudent(c *gin.Context) {
@@ -567,6 +663,7 @@ func (h *Handler) updateStudentProfile(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+	req = normalizeStudentProfileRequest(req)
 	existing, err := h.store.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), id)
 	if err != nil {
 		respondStoreError(c, err)
@@ -921,4 +1018,80 @@ func filterStudentsByStatus(items []Student, status string) []Student {
 		}
 	}
 	return out
+}
+
+func normalizeStudentProfileRequest(req studentProfileRequest) studentProfileRequest {
+	if value := normalizeProfileGrade(req.Grade); value != "" {
+		req.Grade = value
+	} else {
+		req.Grade = strings.TrimSpace(req.Grade)
+	}
+	if value := normalizeProfileClassName(req.ClassName); value != "" {
+		req.ClassName = value
+	} else {
+		req.ClassName = strings.TrimSpace(req.ClassName)
+	}
+	return req
+}
+
+func normalizeProfileGrade(value string) string {
+	value = strings.NewReplacer(" ", "", "　", "", "年纪", "年级").Replace(strings.TrimSpace(value))
+	for number, name := range map[int]string{1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六"} {
+		if strings.Contains(value, name+"年级") || strings.Contains(value, fmt.Sprintf("%d年级", number)) || strings.Contains(value, fmt.Sprintf("%d年纪", number)) {
+			return name + "年级"
+		}
+	}
+	return ""
+}
+
+var (
+	profileClassNumberPattern        = regexp.MustCompile(`([0-9]{1,2})\)?班`)
+	profileChineseClassNumberPattern = regexp.MustCompile(`([一二三四五六七八九十]{1,3})\)?班`)
+)
+
+func normalizeProfileClassName(value string) string {
+	value = strings.NewReplacer(" ", "", "　", "", "（", "(", "）", ")").Replace(strings.TrimSpace(value))
+	if match := profileClassNumberPattern.FindStringSubmatch(value); len(match) == 2 {
+		return match[1] + "班"
+	}
+	if match := profileChineseClassNumberPattern.FindStringSubmatch(value); len(match) == 2 {
+		if number, ok := profileChineseNumber(match[1]); ok {
+			return strconv.Itoa(number) + "班"
+		}
+	}
+	return ""
+}
+
+func profileChineseNumber(value string) (int, bool) {
+	if number, ok := map[string]int{"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}[value]; ok {
+		return number, true
+	}
+	if strings.HasPrefix(value, "十") {
+		if len([]rune(value)) == 2 {
+			if tail, ok := map[string]int{"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}[string([]rune(value)[1])]; ok {
+				return 10 + tail, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func studentDuplicateKey(params CreateStudentParams) string {
+	name := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(params.Name)), " "))
+	studentNo := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(params.StudentNo)), " "))
+	phone := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, strings.TrimSpace(params.GuardianPhone))
+	if studentNo != "" {
+		return fmt.Sprintf("%d|student_no|%s", params.SchoolClassID, studentNo)
+	}
+	if phone != "" {
+		return fmt.Sprintf("%d|name_phone|%s|%s", params.SchoolClassID, name, phone)
+	}
+	// Without a reliable contact or student number, same-name rows in one
+	// class are held for manual review instead of silently creating duplicates.
+	return fmt.Sprintf("%d|name|%s", params.SchoolClassID, name)
 }

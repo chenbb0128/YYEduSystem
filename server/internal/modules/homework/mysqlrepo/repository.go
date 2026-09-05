@@ -18,9 +18,12 @@ import (
 
 const duplicateEntryErrorNumber uint16 = 1062
 
-type Repository struct{ queries *sqlc.Queries }
+type Repository struct {
+	queries *sqlc.Queries
+	exec    database.DBTX
+}
 
-func New(exec database.DBTX) *Repository { return &Repository{queries: sqlc.New(exec)} }
+func New(exec database.DBTX) *Repository { return &Repository{queries: sqlc.New(exec), exec: exec} }
 
 func (r *Repository) ListTasks(ctx context.Context, orgID uint64) ([]homework.Task, error) {
 	items, err := r.queries.ListHomeworkTasks(ctx, orgID)
@@ -109,6 +112,63 @@ func (r *Repository) ReviewStudent(ctx context.Context, orgID uint64, params hom
 		return homework.TaskStudent{}, translateError(err)
 	}
 	return mapTaskStudentByID(item), nil
+}
+
+func (r *Repository) BulkReviewStudents(ctx context.Context, orgID uint64, params homework.BulkReviewStudentsParams) ([]homework.TaskStudent, error) {
+	if len(params.Items) == 0 {
+		return nil, fmt.Errorf("%w: empty review batch", homework.ErrConflict)
+	}
+	seen := make(map[uint64]struct{}, len(params.Items))
+	for _, review := range params.Items {
+		if review.StudentID == 0 {
+			return nil, fmt.Errorf("%w: student is required", homework.ErrNotFound)
+		}
+		if !validStudentStatus(review.Status) {
+			return nil, homework.ErrInvalidStatus
+		}
+		if _, exists := seen[review.StudentID]; exists {
+			return nil, fmt.Errorf("%w: duplicate student %d", homework.ErrConflict, review.StudentID)
+		}
+		seen[review.StudentID] = struct{}{}
+	}
+	apply := func(queries *sqlc.Queries) ([]homework.TaskStudent, error) {
+		out := make([]homework.TaskStudent, 0, len(params.Items))
+		for _, review := range params.Items {
+			if _, err := queries.GetHomeworkTaskStudent(ctx, sqlc.GetHomeworkTaskStudentParams{TaskID: params.TaskID, StudentID: review.StudentID, OrganizationID: orgID}); err != nil {
+				return nil, translateError(err)
+			}
+			if _, err := queries.UpdateHomeworkTaskStudentReview(ctx, sqlc.UpdateHomeworkTaskStudentReviewParams{Status: review.Status, CorrectionNote: strings.TrimSpace(review.CorrectionNote), ReviewedByUserID: nullID(params.ReviewedByUserID), ReviewedAt: sql.NullTime{Time: nowUTC(), Valid: true}, TaskID: params.TaskID, StudentID: review.StudentID, OrganizationID: orgID}); err != nil {
+				return nil, translateError(err)
+			}
+			// Re-read below so the result uses the database's canonical timestamps.
+			updated, err := queries.GetHomeworkTaskStudent(ctx, sqlc.GetHomeworkTaskStudentParams{TaskID: params.TaskID, StudentID: review.StudentID, OrganizationID: orgID})
+			if err != nil {
+				return nil, translateError(err)
+			}
+			out = append(out, mapTaskStudentByID(updated))
+		}
+		return out, nil
+	}
+	if beginner, ok := r.exec.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	}); ok {
+		tx, err := beginner.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		items, applyErr := apply(r.queries.WithTx(tx))
+		if applyErr != nil {
+			_ = tx.Rollback()
+			return nil, applyErr
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return items, nil
+	}
+	// Lightweight DBTX implementations used by focused tests do not expose a
+	// transaction. Production uses *sql.DB and always takes the atomic branch.
+	return apply(r.queries)
 }
 
 func (r *Repository) ListStudentHomework(ctx context.Context, orgID, studentID uint64) ([]homework.StudentHomework, error) {

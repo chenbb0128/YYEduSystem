@@ -1,147 +1,80 @@
-<view class="page add-child-page">
+<view class="page add-child-page first-entry-page">
   <view class="apply-top-actions">
     <view class="apply-home-button" bind:tap="handleBackToIdentity">⌂</view>
     <view class="apply-refresh-button" bind:tap="handleRefresh">{{loading ? '刷新中…' : '刷新状态'}}</view>
   </view>
 
-  <view class="apply-hero">
-    <view class="apply-hero-copy">
-      <view class="apply-kicker">豆芽成长助手</view>
-      <view class="apply-title">添加孩子</view>
-      <view class="apply-subtitle">{{hasBoundChild ? '已绑定孩子，可以继续添加其他孩子。' : '先提交入班申请，老师审核通过并绑定孩子后，才能进入家长端首页。'}}</view>
-    </view>
-    <view class="apply-hero-mark">
-      <view class="apply-hero-leaf"></view>
-      芽
+  <view class="first-entry-hero">
+    <view class="first-entry-mark">芽</view>
+    <view class="first-entry-copy">
+      <view class="first-entry-kicker">豆芽成长助手</view>
+      <view class="first-entry-title">先添加孩子</view>
+      <view class="first-entry-subtitle">完成后，老师才能把接送动态安全地同步给你。</view>
     </view>
   </view>
 
-  <view wx:if="{{hasBoundChild}}" class="apply-success-card">
-    <view class="apply-success-icon">✓</view>
-    <view class="apply-success-copy">
-      <view class="apply-success-title">已有孩子绑定成功</view>
-      <view class="apply-success-text">可以进入家长端查看接送、作业、餐食和每日总结。</view>
-    </view>
+  <view wx:if="{{isInvited && !inviteError}}" class="first-entry-invite-note">
+    <view class="first-entry-invite-icon">✓</view>
+    <view><view class="first-entry-invite-title">已进入老师邀请的班级</view><view class="first-entry-invite-text">{{inviteLoading ? '正在确认班级信息…' : (inviteClassLabel ? inviteClassLabel + '，' : '') + '你只需要填写孩子姓名。'}}</view></view>
+  </view>
+
+  <view wx:if="{{inviteError}}" class="first-entry-rejected-note">
+    <view class="first-entry-review-title">二维码无法使用</view>
+    <view class="first-entry-review-text">{{inviteError}}</view>
+  </view>
+
+  <view wx:if="{{hasBoundChild}}" class="first-entry-success-card">
+    <view class="first-entry-success-icon">✓</view>
+    <view class="first-entry-success-copy"><view class="first-entry-success-title">已有孩子绑定成功</view><view class="first-entry-success-text">可以进入家长端查看接送、作业和餐食动态。</view></view>
     <t-button size="small" theme="primary" bind:tap="handleEnterParent">进入家长端</t-button>
   </view>
 
-  <view wx:else class="apply-guard-card">
-    <view class="apply-guard-icon">i</view>
-    <view>
-      <view class="apply-guard-title">绑定成功前暂不能进入家长端</view>
-      <view class="apply-guard-text">这是为了避免未授权账号看到孩子接送照片和托管记录。</view>
-    </view>
+  <view wx:if="{{applications.length && applications[0].status === 'pending' && !editingApplicationID && !hasBoundChild}}" class="first-entry-wait-card">
+    <view class="first-entry-status-icon">等</view>
+    <view class="first-entry-status-copy"><view class="first-entry-status-title">申请已提交，等待老师确认</view><view class="first-entry-status-text">老师通过后，孩子会自动绑定到当前账号。你可以稍后回来刷新状态。</view><view class="first-entry-status-child">申请孩子：{{applications[0].student_name}}</view></view>
   </view>
 
-  <view class="apply-stepper">
-    <view class="apply-step apply-step-current">
-      <view class="apply-step-number">1</view>
-      <view>填写资料</view>
-    </view>
-    <view class="apply-step-line"></view>
-    <view class="apply-step">
-      <view class="apply-step-number">2</view>
-      <view>提交申请</view>
-    </view>
-    <view class="apply-step-line"></view>
-    <view class="apply-step">
-      <view class="apply-step-number">3</view>
-      <view>老师审核</view>
-    </view>
-    <view class="apply-step-line"></view>
-    <view class="apply-step">
-      <view class="apply-step-number">4</view>
-      <view>绑定成功</view>
-    </view>
+  <view wx:if="{{applications.length && applications[0].status === 'needs_info' && !editingApplicationID}}" class="first-entry-review-note">
+    <view class="first-entry-review-title">老师需要补充信息</view>
+    <view class="first-entry-review-text">{{applications[0].review_note || '请检查资料后重新提交。'}}</view>
   </view>
 
-  <view class="form-card add-child-card">
-    <view class="section-head">
-      <view>
-        <view class="section-kicker">{{editingApplicationID ? '补充资料' : '入班申请'}}</view>
-        <view class="section-title">{{editingApplicationID ? '修改孩子资料' : '填写孩子资料'}}</view>
-      </view>
-      <view class="section-note">提交后由老师审核</view>
-    </view>
-    <view class="muted-text intro-copy">只需要填写孩子姓名、年级、家长手机号和备注；学校、班级、托管班由老师审核时分配。</view>
-
-    <view wx:if="{{invitedSchoolClassID}}" class="success-note">
-      <view class="success-note-icon">✓</view>
-      <view>已通过老师邀请链接进入，学校和班级信息已带入。</view>
-    </view>
-
-    <view class="form-field">
-      <text class="field-label">孩子姓名</text>
-      <view class="field-control">
-        <input class="field-input" maxlength="64" placeholder="{{focusedField === 'childName' ? '' : '请输入孩子姓名'}}" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
-      </view>
-    </view>
-
-    <block wx:if="{{!invitedSchoolClassID}}">
-      <view class="form-field">
-        <text class="field-label">孩子年级</text>
-        <view class="field-control">
-          <input class="field-input" maxlength="32" placeholder="{{focusedField === 'classText' ? '' : '例如：一年级'}}" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
-        </view>
-      </view>
-    </block>
-
-    <view class="form-field">
-      <text class="field-label">家长手机号</text>
-      <view class="field-control">
-        <input class="field-input" type="number" disabled maxlength="32" placeholder="{{focusedField === 'guardianPhone' ? '' : '登录手机号会自动带入'}}" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
-      </view>
-    </view>
-
-    <view wx:if="{{editingApplicationID}}" class="warning-note form-note">这是补充资料，提交后会回到老师审核队列。</view>
-
-    <view class="form-field">
-      <text class="field-label">补充说明（可选）</text>
-      <textarea class="field-textarea" maxlength="500" placeholder="{{focusedField === 'applicationNotes' ? '' : '如有特殊情况可在这里说明'}}" data-field="applicationNotes" value="{{applicationNotes}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
-    </view>
-
-    <view class="form-submit">
-      <t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitApplication">{{editingApplicationID ? '重新提交审核' : '提交入班申请'}}</t-button>
-    </view>
+  <view wx:if="{{applications.length && applications[0].status === 'rejected' && !editingApplicationID}}" class="first-entry-rejected-note">
+    <view class="first-entry-review-title">这次申请未通过</view>
+    <view class="first-entry-review-text">{{applications[0].review_note || '可以修改资料后重新提交。'}}</view>
   </view>
 
-  <view class="content-card application-record-card">
-    <view class="section-head">
-      <view>
-        <view class="section-kicker">申请进度</view>
-        <view class="section-title">我的申请记录</view>
-      </view>
-      <view class="section-note">{{applications.length ? applications.length + ' 条' : '暂无记录'}}</view>
+  <view wx:if="{{hasBoundChild || !applications.length || applications[0].status !== 'pending' || editingApplicationID}}" class="first-entry-form-card">
+    <view class="first-entry-form-heading">
+      <view><view class="first-entry-form-kicker">{{editingApplicationID ? '修改申请' : hasBoundChild ? '继续添加' : '第一次使用'}}</view><view class="first-entry-form-title">填写必要信息</view></view>
+      <view class="first-entry-form-count">{{isInvited ? '1 项' : '2 项'}}</view>
     </view>
 
-    <block wx:if="{{applications.length}}">
-      <view wx:for="{{applications}}" wx:key="id" class="record-row">
-        <view class="record-main">
-          <view class="record-title-line">
-            <text class="record-title">{{item.student_name}}</text>
-            <text class="status-pill {{item.status === 'needs_info' ? 'status-tone-warning' : item.status === 'rejected' ? 'status-tone-danger' : item.status === 'approved' ? 'status-tone-success' : ''}}">{{item.status_label}}</text>
-          </view>
-          <view class="record-meta">{{item.school_name_input ? item.school_name_input + ' · ' : ''}}{{item.grade_input || item.grade || '年级待确认'}}{{item.class_name_input}}</view>
-          <view wx:if="{{item.review_note}}" class="record-note">老师备注：{{item.review_note}}</view>
-          <view wx:if="{{item.status === 'pending'}}" class="record-tip">老师审核通过后，孩子会自动绑定到当前账号。</view>
-          <view wx:if="{{item.status === 'needs_info'}}" class="record-action">
-            <t-button size="small" variant="outline" data-application-id="{{item.id}}" bind:tap="handleResubmitApplication">修改并重提</t-button>
-          </view>
-        </view>
-      </view>
-    </block>
-
-    <view wx:else class="apply-empty-state">
-      <view class="apply-empty-icon">芽</view>
-      <view class="apply-empty-title">还没有提交申请</view>
-      <view class="apply-empty-text">填写上方资料后，老师会在管理端审核。</view>
+    <view class="first-entry-field">
+      <text class="first-entry-label">孩子姓名</text>
+      <view class="field-control first-entry-control"><input class="field-input" maxlength="64" placeholder="请输入孩子姓名" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
     </view>
+
+    <view wx:if="{{!isInvited}}" class="first-entry-field">
+      <text class="first-entry-label">孩子所在年级或班级</text>
+      <view class="field-control first-entry-control"><input class="field-input" maxlength="32" placeholder="例如：一年级 2 班" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+      <view class="first-entry-help">也可以让老师发班级二维码，扫码后自动带入。</view>
+    </view>
+
+    <view class="first-entry-optional-toggle" bind:tap="toggleOptionalInfo">{{optionalVisible ? '收起补充说明' : '补充说明（可选）'}} <text>{{optionalVisible ? '⌃' : '⌄'}}</text></view>
+    <view wx:if="{{optionalVisible}}" class="first-entry-optional-field">
+      <view class="first-entry-optional-phone"><text class="first-entry-label">家长手机号（可选）</text><view class="field-control first-entry-control"><input class="field-input" type="number" maxlength="32" placeholder="用于老师联系和接送提醒" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+      <textarea class="field-textarea" maxlength="500" placeholder="例如：接送人、过敏情况或其他需要老师知道的事项" data-field="applicationNotes" value="{{applicationNotes}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
+    </view>
+
+    <view class="first-entry-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitApplication">{{editingApplicationID ? '重新提交审核' : '提交申请'}}</t-button></view>
   </view>
 
-  <view class="privacy-note">
-    <view class="privacy-lock">●</view>
-    孩子信息仅对审核通过后的授权账号可见
+  <view wx:if="{{applications.length && (hasBoundChild || applications.length > 1 || applications[0].status !== 'pending')}}" class="first-entry-history content-card">
+    <view class="first-entry-history-heading"><view><view class="first-entry-history-kicker">申请记录</view><view class="first-entry-history-title">查看处理进度</view></view><view class="first-entry-history-count">{{applications.length}} 条</view></view>
+    <view wx:for="{{applications}}" wx:key="id" class="first-entry-history-row"><view class="first-entry-history-main"><view class="first-entry-history-name">{{item.student_name}}</view><view class="first-entry-history-meta">{{item.school_name_input || '学校待确认'}} · {{item.grade_input || item.grade || item.class_name_input || '班级待确认'}}</view><view wx:if="{{item.review_note}}" class="first-entry-history-note">老师：{{item.review_note}}</view></view><text class="status-pill {{item.status === 'needs_info' ? 'status-tone-warning' : item.status === 'rejected' ? 'status-tone-danger' : item.status === 'approved' ? 'status-tone-success' : 'status-tone-warning'}}">{{item.status_label}}</text><t-button wx:if="{{item.status === 'needs_info'}}" size="small" variant="outline" data-application-id="{{item.id}}" bind:tap="handleResubmitApplication">修改</t-button></view>
   </view>
 
+  <view class="privacy-note"><view class="privacy-lock">●</view>孩子信息仅对审核通过后的授权账号可见</view>
   <t-toast id="t-toast" />
 </view>

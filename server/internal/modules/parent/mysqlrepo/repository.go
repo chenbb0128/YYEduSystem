@@ -256,6 +256,12 @@ func (r *Repository) CreateLeaveRequest(ctx context.Context, orgID uint64, param
 func (r *Repository) CreateTeacherLeaveRequest(ctx context.Context, orgID uint64, params parent.CreateTeacherLeaveRequestParams) (parent.LeaveRequest, error) {
 	existing, err := r.queries.FindActiveTeacherLeaveRequest(ctx, sqlc.FindActiveTeacherLeaveRequestParams{OrganizationID: orgID, StudentID: params.StudentID, LeaveDate: params.LeaveDate})
 	if err == nil {
+		// The teacher flow is safe to retry after a client-side timeout or a
+		// later pickup-status failure. Do not create another row; return the
+		// original teacher record. Parent-submitted requests remain conflicts.
+		if existing.SubmittedByType == parent.LeaveSubmittedByTeacher {
+			return mapLeaveRequest(existing), nil
+		}
 		return parent.LeaveRequest{}, fmt.Errorf("%w: leave request %d", parent.ErrConflict, existing.ID)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {

@@ -14,6 +14,7 @@ import (
 	pickupmysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup/mysqlrepo"
 	schedulemodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/schedule"
 	schedulemysqlrepo "github.com/chenbb0128/tuoguan-system-server/internal/modules/schedule/mysqlrepo"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/database"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/queue"
 	redisclient "github.com/chenbb0128/tuoguan-system-server/internal/platform/redis"
@@ -157,5 +158,5 @@ func runScheduleGeneration(ctx context.Context, generator *schedulemodule.Genera
 }
 
 func localDate() (time.Time, error) {
-	return time.ParseInLocation("2006-01-02", time.Now().Format("2006-01-02"), time.UTC)
+	return businessdate.Today(time.Now()), nil
 }

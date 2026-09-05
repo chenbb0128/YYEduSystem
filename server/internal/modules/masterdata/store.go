@@ -21,6 +21,7 @@ type Store interface {
 	CreateCareClass(context.Context, uint64, CreateCareClassParams) (CareClass, error)
 	ListStudents(context.Context, uint64) ([]Student, error)
 	CreateStudent(context.Context, uint64, CreateStudentParams) (Student, error)
+	BulkCreateStudents(context.Context, uint64, BulkCreateStudentsParams) ([]Student, error)
 	FindStudent(context.Context, uint64, uint64) (Student, error)
 	UpdateStudent(context.Context, uint64, UpdateStudentParams) (Student, error)
 }

@@ -1,0 +1,33 @@
+<view class="page exceptions-page">
+  <view class="page-header exceptions-header">
+    <view class="page-header__identity"><view class="brand-emblem">芽</view><view><view class="page-eyebrow">豆芽成长助手 · 教师端</view><view class="page-title">异常中心</view><view class="page-subtitle">只展示你负责班级中需要跟进的事项</view></view></view>
+    <view class="page-helper">{{loading ? '同步中…' : date}}</view>
+  </view>
+
+  <view class="exception-summary soft-card">
+    <view class="exception-summary-main"><view class="summary-date-label">{{showAcknowledged ? '已确认记录' : '今日待处理'}}</view><view class="exception-summary-number">{{total}} <text>项</text></view><view class="summary-date-caption">{{showAcknowledged ? '可回看处理说明和确认人' : '其中 ' + dangerCount + ' 项需要优先核对'}}</view></view>
+    <view class="exception-summary-badge {{total ? 'has-exception' : 'all-clear'}}">{{total ? (showAcknowledged ? '处理留痕' : '请及时处理') : (showAcknowledged ? '暂无确认记录' : '今日已清空')}}</view>
+  </view>
+
+  <view class="exception-history-toggle" catch:tap="handleToggleAcknowledged">{{showAcknowledged ? '仅看待处理' : '查看已确认记录'}} <text>›</text></view>
+
+  <scroll-view class="category-scroll" scroll-x="true" enable-flex="true">
+    <view class="category-list">
+      <view wx:for="{{categoryItems}}" wx:key="key" class="category-chip {{item.active ? 'category-chip-active' : ''}}" data-category="{{item.key}}" bind:tap="handleCategoryChange"><text>{{item.label}}</text><text class="category-count">{{item.count}}</text></view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{loadError}}" class="exception-error soft-card"><view class="exception-error-title">异常中心暂时不可用</view><view class="exception-error-message">{{loadError}}</view><t-button size="small" theme="primary" bind:tap="load">重新加载</t-button></view>
+  <view wx:elif="{{visibleItems.length}}" class="exception-list">
+    <view wx:for="{{visibleItems}}" wx:key="id" class="exception-card {{item.severity === 'danger' ? 'exception-card-danger' : ''}}" data-action="{{item.action}}" bind:tap="handleOpenException">
+      <view class="exception-card-top"><view class="exception-card-label"><view class="exception-dot {{item.severity}}"></view><text>{{item.label}}</text></view><view class="exception-category">{{item.category_label}}</view></view>
+      <view class="exception-message">{{item.message}}</view>
+      <view wx:if="{{item.class_name || item.student_name}}" class="exception-meta">{{item.class_name || '今日托管'}}<text wx:if="{{item.student_name}}"> · {{item.student_name}}</text></view>
+      <view wx:if="{{!item.acknowledged}}" class="exception-card-actions"><view class="exception-action" data-action="{{item.action}}" catch:tap="handleOpenException">去处理 <text>›</text></view><view class="exception-acknowledge" data-exception-id="{{item.id}}" catch:tap="handleOpenAcknowledge">标记已知</view></view>
+      <view wx:else class="exception-acknowledged"><text>已确认{{item.acknowledged_by ? ' · ' + item.acknowledged_by : ''}}</text><text wx:if="{{item.acknowledged_at}}">{{item.acknowledged_at}}</text></view>
+    </view>
+  </view>
+  <view wx:else class="empty-state soft-card"><view class="empty-illustration">✓</view><t-empty description="当前分类没有待处理事项" /></view>
+  <view wx:if="{{acknowledgeVisible && acknowledgeException}}" class="acknowledge-mask" catch:tap="closeAcknowledge"><view class="acknowledge-sheet" catch:tap="closeAcknowledge"><view class="sheet-handle"></view><view class="sheet-header"><view><view class="section-kicker">处理留痕</view><view class="section-title">标记为已知</view></view><view class="text-link" catch:tap="closeAcknowledge">取消</view></view><view class="acknowledge-target"><view class="acknowledge-target-title">{{acknowledgeException.label}}</view><view class="acknowledge-target-message">{{acknowledgeException.message}}</view></view><view class="sheet-field"><text class="field-label">处理说明（可选）</text><textarea class="field-textarea" maxlength="200" placeholder="例如：已电话联系家长，明天补齐照片" value="{{acknowledgeNote}}" bindinput="handleAcknowledgeInput" /></view><view class="sheet-submit"><t-button block theme="primary" loading="{{acknowledging}}" catch:tap="submitAcknowledge">确认已知</t-button></view></view></view>
+  <t-toast id="t-toast" />
+</view>

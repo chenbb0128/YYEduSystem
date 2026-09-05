@@ -131,6 +131,31 @@ func (s *MemoryStore) CreateStudent(_ context.Context, orgID uint64, params Crea
 	return item, nil
 }
 
+func (s *MemoryStore) BulkCreateStudents(_ context.Context, orgID uint64, params BulkCreateStudentsParams) ([]Student, error) {
+	if len(params.Items) == 0 {
+		return []Student{}, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	created := make([]Student, 0, len(params.Items))
+	for _, itemParams := range params.Items {
+		item := Student{
+			ID: s.newID(), OrganizationID: orgID, SchoolID: itemParams.SchoolID,
+			TermID: itemParams.TermID, SchoolClassID: itemParams.SchoolClassID,
+			CareClassID: cloneID(itemParams.CareClassID), Name: itemParams.Name,
+			Gender: itemParams.Gender, BirthDate: cloneTime(itemParams.BirthDate),
+			StudentNo: itemParams.StudentNo, GuardianPhone: itemParams.GuardianPhone,
+			EmergencyContact: itemParams.EmergencyContact, EmergencyPhone: itemParams.EmergencyPhone,
+			Status: "active", Notes: itemParams.Notes, CreatedAt: now, UpdatedAt: now,
+		}
+		created = append(created, item)
+	}
+	s.students = append(s.students, created...)
+	return slices.Clone(created), nil
+}
+
 func (s *MemoryStore) FindStudent(_ context.Context, orgID, id uint64) (Student, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

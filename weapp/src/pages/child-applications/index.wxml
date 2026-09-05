@@ -4,9 +4,9 @@
     <view class="page-helper">{{loading ? '审核队列同步中…' : '逐条确认更安心'}}</view>
   </view>
 
-  <view class="review-guide">
+    <view class="review-guide">
     <view class="review-guide-icon">审</view>
-    <view class="review-guide-copy"><view class="review-guide-title">审核小提示</view><view class="review-guide-text">先确认孩子与家长信息，再选择负责班级。通过后会自动建档并绑定。</view></view>
+    <view class="review-guide-copy"><view class="review-guide-title">审核小提示</view><view class="review-guide-text">扫码申请已经自动匹配班级，确认孩子姓名和家长信息后即可通过。</view></view>
   </view>
 
   <view wx:if="{{applications.length}}" class="application-list">
@@ -16,7 +16,7 @@
       <view wx:if="{{item.notes}}" class="application-note"><text class="note-label">家长备注</text>{{item.notes}}</view>
       <view wx:if="{{item.review_note}}" class="review-note"><text class="note-label">审核备注</text>{{item.review_note}}</view>
       <view wx:if="{{(item.status === 'pending' || item.status === 'needs_info') && !item.school_class_id}}" class="class-auto-note">{{item.class_auto_note}}</view>
-      <view wx:if="{{item.status === 'pending' || item.status === 'needs_info'}}" class="review-actions"><t-button size="small" theme="success" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleApprove">{{item.approve_action_label}}</t-button><t-button size="small" variant="outline" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleNeedsInfo">补充资料</t-button><t-button size="small" variant="outline" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleReject">不通过</t-button></view>
+      <view wx:if="{{item.status === 'pending' || item.status === 'needs_info'}}" class="review-actions"><t-button size="small" theme="success" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleApprove">{{item.approve_action_label}}</t-button><t-button size="small" variant="outline" loading="{{loading}}" data-application-id="{{item.id}}" bind:tap="handleMoreActions">更多</t-button></view>
     </view>
   </view>
   <view wx:else class="empty-state soft-card"><view class="empty-illustration">✓</view><t-empty description="暂时没有待审核的家长申请" /></view>

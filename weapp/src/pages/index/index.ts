@@ -368,6 +368,11 @@ Page({
       wx.navigateTo({ url: '/pages/child-applications/index' })
     }
   },
+  handleOpenExceptions() {
+    if (typeof wx !== 'undefined') {
+      wx.navigateTo({ url: '/pages/exceptions/index' })
+    }
+  },
   handleOpenParent() {
     openParentHome()
   },

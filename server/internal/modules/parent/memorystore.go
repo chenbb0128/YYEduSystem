@@ -356,6 +356,14 @@ func (s *MemoryStore) CreateTeacherLeaveRequest(_ context.Context, orgID uint64,
 	defer s.mu.Unlock()
 	for _, existing := range s.leaves {
 		if existing.OrganizationID == orgID && existing.StudentID == params.StudentID && sameDay(existing.LeaveDate, params.LeaveDate) && existing.Status != LeaveStatusRejected && existing.Status != LeaveStatusCancelled {
+			// The teacher flow is intentionally idempotent. If the client lost
+			// the response after the leave record was created, retrying must
+			// return the existing teacher record so the pickup status can still
+			// be completed. A parent's pending request remains a conflict and
+			// still requires normal review.
+			if existing.SubmittedByType == LeaveSubmittedByTeacher {
+				return cloneLeave(existing), nil
+			}
 			return LeaveRequest{}, ErrConflict
 		}
 	}

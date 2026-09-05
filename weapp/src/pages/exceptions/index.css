@@ -1,0 +1,325 @@
+.exceptions-page {
+  padding-bottom: 90rpx;
+}
+
+.exceptions-header {
+  margin-bottom: 24rpx;
+}
+
+.exception-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 26rpx;
+  margin-bottom: 22rpx;
+  background: linear-gradient(135deg, #fff8eb, #fff);
+}
+
+.exception-summary-main {
+  min-width: 0;
+}
+
+.exception-summary-number {
+  margin-top: 8rpx;
+  font-size: 46rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #d97839;
+}
+
+.exception-summary-number text {
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.exception-summary-badge {
+  padding: 12rpx 18rpx;
+  font-size: 22rpx;
+  border-radius: 999rpx;
+}
+
+.exception-summary-badge.has-exception {
+  color: #a76224;
+  background: #fff0d1;
+}
+
+.exception-summary-badge.all-clear {
+  color: #31825a;
+  background: #e9f7ed;
+}
+
+.category-scroll {
+  width: 100%;
+  margin-bottom: 20rpx;
+  white-space: nowrap;
+}
+
+.exception-history-toggle {
+  padding: 4rpx 4rpx 20rpx;
+  font-size: 23rpx;
+  color: #398768;
+  text-align: right;
+}
+
+.exception-history-toggle text {
+  margin-left: 6rpx;
+  font-size: 28rpx;
+}
+
+.category-list {
+  display: inline-flex;
+  gap: 14rpx;
+  padding: 2rpx 2rpx 10rpx;
+}
+
+.category-chip {
+  display: inline-flex;
+  gap: 8rpx;
+  align-items: center;
+  padding: 14rpx 20rpx;
+  font-size: 23rpx;
+  color: #6e817a;
+  background: #fff;
+  border: 1rpx solid #e3ece7;
+  border-radius: 999rpx;
+}
+
+.category-chip-active {
+  color: #fff;
+  background: #398768;
+  border-color: #398768;
+}
+
+.category-count {
+  min-width: 26rpx;
+  padding: 1rpx 6rpx;
+  font-size: 19rpx;
+  text-align: center;
+  background: rgb(45 104 79 / 10%);
+  border-radius: 999rpx;
+}
+
+.category-chip-active .category-count {
+  background: rgb(255 255 255 / 22%);
+}
+
+.exception-error {
+  padding: 30rpx 26rpx;
+  text-align: center;
+}
+
+.exception-error-title {
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #4a5e56;
+}
+
+.exception-error-message {
+  margin: 12rpx 0 20rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #8a756a;
+}
+
+.exception-card {
+  position: relative;
+  padding: 26rpx 26rpx 24rpx;
+  margin-bottom: 16rpx;
+  background: #fff;
+  border: 1rpx solid #e2eee6;
+  border-radius: 24rpx;
+  box-shadow: 0 10rpx 26rpx rgb(48 91 71 / 5%);
+}
+
+.exception-card-danger {
+  border-color: #f1d8c7;
+}
+
+.exception-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.exception-card-label {
+  display: flex;
+  gap: 12rpx;
+  align-items: center;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #304b40;
+}
+
+.exception-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+}
+
+.exception-dot.danger {
+  background: #dd7950;
+  box-shadow: 0 0 0 6rpx #fff0e7;
+}
+
+.exception-dot.warning {
+  background: #e2ab44;
+  box-shadow: 0 0 0 6rpx #fff7df;
+}
+
+.exception-category {
+  padding: 6rpx 12rpx;
+  font-size: 20rpx;
+  color: #6d8178;
+  background: #f1f7f3;
+  border-radius: 999rpx;
+}
+
+.exception-message {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: #536c62;
+}
+
+.exception-meta {
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  color: #8b9b94;
+}
+
+.exception-action {
+  font-size: 22rpx;
+  color: #398768;
+}
+
+.exception-action text {
+  margin-left: 6rpx;
+  font-size: 28rpx;
+}
+
+.exception-card-actions {
+  display: flex;
+  gap: 24rpx;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 18rpx;
+  margin-top: 18rpx;
+  border-top: 1rpx solid #edf3ef;
+}
+
+.exception-acknowledge {
+  padding: 8rpx 14rpx;
+  font-size: 21rpx;
+  color: #866a36;
+  background: #fff7df;
+  border-radius: 999rpx;
+}
+
+.exception-acknowledged {
+  display: flex;
+  gap: 10rpx;
+  justify-content: flex-end;
+  padding-top: 18rpx;
+  margin-top: 18rpx;
+  font-size: 20rpx;
+  color: #7b9188;
+  border-top: 1rpx solid #edf3ef;
+}
+
+.acknowledge-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(36 49 43 / 42%);
+}
+
+.acknowledge-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 82vh;
+  padding: 24rpx 30rpx 42rpx;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 30rpx 30rpx 0 0;
+}
+
+.sheet-handle {
+  width: 70rpx;
+  height: 8rpx;
+  margin: 0 auto 24rpx;
+  background: #dbe8df;
+  border-radius: 8rpx;
+}
+
+.sheet-header {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-kicker {
+  font-size: 20rpx;
+  color: #8ca398;
+}
+
+.section-title {
+  margin-top: 6rpx;
+  font-size: 31rpx;
+  font-weight: 700;
+  color: #304b40;
+}
+
+.text-link {
+  font-size: 23rpx;
+  color: #398768;
+}
+
+.acknowledge-target {
+  padding: 20rpx;
+  margin-top: 26rpx;
+  background: #f7faf8;
+  border: 1rpx solid #e2eee6;
+  border-radius: 18rpx;
+}
+
+.acknowledge-target-title {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #304b40;
+}
+
+.acknowledge-target-message {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: #61776d;
+}
+
+.sheet-field {
+  margin-top: 24rpx;
+}
+
+.field-label {
+  font-size: 22rpx;
+  color: #6f857b;
+}
+
+.field-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 150rpx;
+  padding: 18rpx;
+  margin-top: 12rpx;
+  line-height: 1.6;
+  color: #2b443c;
+  background: #f7faf8;
+  border: 1rpx solid #dfece3;
+  border-radius: 16rpx;
+}
+
+.sheet-submit {
+  margin-top: 28rpx;
+}

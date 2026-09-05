@@ -79,6 +79,159 @@ func TestHandlerPickupLifecycleRequiresPhotoAtSchoolGate(t *testing.T) {
 	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/4/status", `{"status":"leave"}`, http.StatusBadRequest)
 }
 
+func TestHandlerCloseCheckSeparatesBlockersAndWarnings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	master := masterdata.NewMemoryStore()
+	seedMasterData(t, master)
+	store := NewMemoryStore()
+	handler := NewHandler(store, master, nil)
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations", `{"operation_date":"2026-09-01","school_class_id":3}`, http.StatusCreated)
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/start", "", http.StatusOK)
+
+	check := requestJSON(t, router, http.MethodGet, "/api/v1/pickup-operations/1/close-check", "", http.StatusOK)
+	var first struct {
+		CanFinish bool             `json:"can_finish"`
+		Blockers  []workbenchAlert `json:"blockers"`
+		Warnings  []workbenchAlert `json:"warnings"`
+	}
+	decodeData(t, check, &first)
+	if first.CanFinish || len(first.Blockers) != 1 || first.Blockers[0].Kind != "student_pending" || len(first.Warnings) != 0 {
+		t.Fatalf("initial close check = %+v", first)
+	}
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/4/status", `{"status":"picked_up","photo_url":"/uploads/pickup/4.jpg"}`, http.StatusOK)
+	check = requestJSON(t, router, http.MethodGet, "/api/v1/pickup-operations/1/close-check", "", http.StatusOK)
+	var afterPickup struct {
+		CanFinish bool             `json:"can_finish"`
+		Blockers  []workbenchAlert `json:"blockers"`
+	}
+	decodeData(t, check, &afterPickup)
+	if afterPickup.CanFinish || len(afterPickup.Blockers) != 1 || afterPickup.Blockers[0].Kind != "student_pending" {
+		t.Fatalf("picked-up close check = %+v", afterPickup)
+	}
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/4/status", `{"status":"arrived"}`, http.StatusOK)
+	check = requestJSON(t, router, http.MethodGet, "/api/v1/pickup-operations/1/close-check", "", http.StatusOK)
+	var ready struct {
+		CanFinish bool             `json:"can_finish"`
+		Blockers  []workbenchAlert `json:"blockers"`
+		Warnings  []workbenchAlert `json:"warnings"`
+	}
+	decodeData(t, check, &ready)
+	if !ready.CanFinish || len(ready.Blockers) != 0 || len(ready.Warnings) != 0 {
+		t.Fatalf("ready close check = %+v", ready)
+	}
+
+	createdSecond := requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations", `{"operation_date":"2026-09-02","school_class_id":3}`, http.StatusCreated)
+	var secondOperation operationView
+	decodeData(t, createdSecond, &secondOperation)
+	secondOperationPath := fmt.Sprintf("/api/v1/pickup-operations/%d", secondOperation.ID)
+	requestJSON(t, router, http.MethodPost, secondOperationPath+"/start", "", http.StatusOK)
+	requestJSON(t, router, http.MethodPost, secondOperationPath+"/students/4/status", `{"status":"absent","note":"已联系家长确认"}`, http.StatusOK)
+	check = requestJSON(t, router, http.MethodGet, secondOperationPath+"/close-check", "", http.StatusOK)
+	var warning struct {
+		CanFinish bool             `json:"can_finish"`
+		Blockers  []workbenchAlert `json:"blockers"`
+		Warnings  []workbenchAlert `json:"warnings"`
+	}
+	decodeData(t, check, &warning)
+	if !warning.CanFinish || len(warning.Blockers) != 0 || len(warning.Warnings) != 1 || warning.Warnings[0].Kind != "exception" {
+		t.Fatalf("warning close check = %+v", warning)
+	}
+}
+
+func TestHandlerBulkArriveIsAtomicAndIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	master := masterdata.NewMemoryStore()
+	seedMasterData(t, master)
+	store := NewMemoryStore()
+	handler := NewHandler(store, master, nil)
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations", `{"operation_date":"2026-09-04","school_class_id":3}`, http.StatusCreated)
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/start", "", http.StatusOK)
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/bulk-arrive", `{"student_ids":[4]}`, http.StatusBadRequest)
+
+	students := requestJSON(t, router, http.MethodGet, "/api/v1/pickup-operations/1/students", "", http.StatusOK)
+	var before struct {
+		Items []operationStudentView `json:"items"`
+	}
+	decodeData(t, students, &before)
+	if len(before.Items) != 1 || before.Items[0].Status != MemberStatusPlanned {
+		t.Fatalf("failed bulk request changed member = %+v", before.Items)
+	}
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/4/status", `{"status":"picked_up","photo_url":"/uploads/pickup/4.jpg"}`, http.StatusOK)
+	bulk := requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/bulk-arrive", `{"student_ids":[4,4],"note":"全员到班核对"}`, http.StatusOK)
+	var page struct {
+		Items []operationStudentView `json:"items"`
+	}
+	decodeData(t, bulk, &page)
+	if len(page.Items) != 1 || page.Items[0].Status != MemberStatusArrived {
+		t.Fatalf("bulk result = %+v", page.Items)
+	}
+
+	requestJSON(t, router, http.MethodPost, "/api/v1/pickup-operations/1/students/bulk-arrive", `{"student_ids":[4]}`, http.StatusOK)
+	notifications := requestJSON(t, router, http.MethodGet, "/api/v1/notifications", "", http.StatusOK)
+	var notificationPage struct {
+		Items []notificationView `json:"items"`
+	}
+	decodeData(t, notifications, &notificationPage)
+	if len(notificationPage.Items) != 2 {
+		t.Fatalf("idempotent bulk notification count = %d, want 2", len(notificationPage.Items))
+	}
+	if notificationPage.Items[0].Title != "孩子已确认到班" {
+		t.Fatalf("bulk notification title = %q, want arrival title", notificationPage.Items[0].Title)
+	}
+}
+
+func TestHandlerBatchNotificationsRespectStudentScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	master := masterdata.NewMemoryStore()
+	seedMasterData(t, master)
+	store := NewMemoryStore()
+	handler := NewHandler(store, master, nil)
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	created := requestJSON(t, router, http.MethodPost, "/api/v1/notifications/batch", `{"student_ids":[4],"title":"明日提醒","content":"请带好水杯"}`, http.StatusOK)
+	var page struct {
+		Items []batchNotificationView `json:"items"`
+		Total int                     `json:"total"`
+	}
+	decodeData(t, created, &page)
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].StudentID != 4 {
+		t.Fatalf("batch notification result = %+v", page)
+	}
+	notifications := requestJSON(t, router, http.MethodGet, "/api/v1/notifications", "", http.StatusOK)
+	var notificationPage struct {
+		Items []notificationView `json:"items"`
+	}
+	decodeData(t, notifications, &notificationPage)
+	if len(notificationPage.Items) != 1 || notificationPage.Items[0].Title != "明日提醒" {
+		t.Fatalf("notifications = %+v", notificationPage.Items)
+	}
+
+	assignments := assignment.NewMemoryStore()
+	users := identity.NewMemoryStore()
+	teacher, err := users.CreateUser(context.Background(), identity.CreateUserParams{Username: "teacher-batch", Nickname: "王老师", PasswordHash: "test-hash", Role: identity.UserRoleTeacher, Status: identity.UserStatusActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := assignments.Create(context.Background(), masterdata.DefaultOrganizationID, assignment.CreateParams{TeacherUserID: teacher.ID, SchoolClassID: 999}); err != nil {
+		t.Fatal(err)
+	}
+	scopedHandler := NewHandler(NewMemoryStore(), master, nil)
+	scopedHandler.SetStaffScope(assignments, users)
+	scopedRouter := gin.New()
+	scopedHandler.RegisterRoutes(scopedRouter.Group("/api/v1"))
+	requestJSONAs(t, scopedRouter, identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: teacher.ID, Role: identity.UserRoleTeacher}, http.MethodPost, "/api/v1/notifications/batch", `{"student_ids":[4],"title":"不应发送","content":"无权限"}`, http.StatusBadRequest)
+}
+
 func TestHandlerPhotoUploadReturnsImageFormatMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	master := masterdata.NewMemoryStore()

@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "异常中心",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#F9F5E8",
+  "usingComponents": {
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-toast": "tdesign-miniprogram/toast/toast"
+  }
+}

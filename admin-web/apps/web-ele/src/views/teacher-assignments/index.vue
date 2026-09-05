@@ -44,6 +44,10 @@ const schoolClasses = ref<SchoolClassRecord[]>([]);
 const schools = ref<SchoolRecord[]>([]);
 const form = reactive({ teacher_user_id: 0, school_class_id: 0 });
 
+function safeItems<T>(page?: null | { items?: null | T[] }) {
+  return Array.isArray(page?.items) ? page.items : [];
+}
+
 const availableTeachers = computed(() =>
   teachers.value.filter(
     (user) => user.role === 'teacher' && user.status === 'active',
@@ -76,12 +80,15 @@ async function loadData() {
         getSchoolClassesApi(),
         getSchoolsApi(),
       ]);
-    assignments.value = assignmentResult.items;
-    teachers.value = userResult.items;
-    schoolClasses.value = classResult.items;
-    schools.value = schoolResult.items;
+    assignments.value = safeItems(assignmentResult);
+    teachers.value = safeItems(userResult);
+    schoolClasses.value = safeItems(classResult);
+    schools.value = safeItems(schoolResult);
   } catch {
     assignments.value = [];
+    teachers.value = [];
+    schoolClasses.value = [];
+    schools.value = [];
     loadError.value = '教师班级数据加载失败，请稍后重试。';
   } finally {
     loading.value = false;

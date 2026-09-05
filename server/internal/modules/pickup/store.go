@@ -70,9 +70,11 @@ type Store interface {
 	AddOperationStudent(context.Context, uint64, AddOperationStudentParams) (OperationStudent, error)
 	CompleteOperationStudentProfile(context.Context, uint64, uint64, uint64) error
 	MarkOperationStudent(context.Context, uint64, MarkStudentParams) (OperationStudent, error)
+	BulkArriveOperationStudents(context.Context, uint64, BulkArriveStudentsParams) ([]OperationStudent, error)
 	CorrectOperationEvent(context.Context, uint64, CorrectEventParams) (OperationStudent, error)
 	ListEvents(context.Context, uint64, uint64) ([]Event, error)
 	CreateNotification(context.Context, uint64, CreateNotificationParams) (Notification, error)
+	CreateNotifications(context.Context, uint64, []CreateNotificationParams) ([]Notification, error)
 	FindNotification(context.Context, uint64, uint64) (Notification, error)
 	ListNotifications(context.Context, uint64) ([]Notification, error)
 	SetNotificationStatus(context.Context, uint64, SetNotificationStatusParams) error

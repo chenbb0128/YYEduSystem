@@ -20,11 +20,16 @@ async function initApplication() {
     namespace,
     overrides: overridesPreferences,
   });
-  // 产品品牌不是用户偏好项。强制写回产品名，避免旧版本缓存的
-  // “托管班管理系统”覆盖当前的“豆芽成长助手”。
+  // 产品品牌不是用户偏好项。强制写回产品名，避免旧版本缓存覆盖当前名称。
   preferencesManager.updatePreferences({
     app: { name: appConfig.name },
     copyright: { companyName: appConfig.name },
+    tabbar: {
+      enable: false,
+      keepAlive: false,
+      persist: false,
+      visitHistory: false,
+    },
   });
 
   // 启动应用并挂载

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { DailyOverviewRecord } from '#/api/reports';
+import type { DailyExceptionRecord, DailyOverviewRecord } from '#/api/reports';
 
 import { computed, onMounted, ref } from 'vue';
 
@@ -8,13 +8,20 @@ import {
   ElButton,
   ElCard,
   ElDatePicker,
+  ElDialog,
   ElEmpty,
+  ElInput,
+  ElMessage,
   ElTable,
   ElTableColumn,
   ElTag,
 } from 'element-plus';
 
-import { getDailyOverviewApi } from '#/api/reports';
+import {
+  acknowledgeDailyExceptionApi,
+  getDailyExceptionsApi,
+  getDailyOverviewApi,
+} from '#/api/reports';
 import { businessToday } from '#/utils/business-date';
 
 defineOptions({ name: 'AnomalyOverview' });
@@ -23,6 +30,12 @@ const selectedDate = ref(businessToday());
 const loading = ref(false);
 const loadError = ref('');
 const overview = ref<DailyOverviewRecord | null>(null);
+const exceptions = ref<DailyExceptionRecord[]>([]);
+const showAcknowledged = ref(false);
+const acknowledgeVisible = ref(false);
+const acknowledgeLoading = ref(false);
+const acknowledgeNote = ref('');
+const selectedException = ref<DailyExceptionRecord | null>(null);
 
 const resolvedPercent = computed(() => {
   const pickup = overview.value?.pickup;
@@ -50,16 +63,70 @@ function statusLabel(value: string) {
   return statusLabels[value] || value;
 }
 
+const categoryLabels: Record<string, string> = {
+  application: '入班申请',
+  homework: '作业',
+  leave: '请假',
+  meal: '餐食',
+  pickup: '接送',
+  student: '学生档案',
+  summary: '每日总结',
+};
+
+function categoryLabel(value: string) {
+  return categoryLabels[value] || value;
+}
+
 async function loadData() {
   loading.value = true;
   loadError.value = '';
   try {
-    overview.value = await getDailyOverviewApi({ date: selectedDate.value });
+    const [overviewResult, exceptionResult] = await Promise.all([
+      getDailyOverviewApi({ date: selectedDate.value }),
+      getDailyExceptionsApi({
+        date: selectedDate.value,
+        include_acknowledged: showAcknowledged.value,
+      }),
+    ]);
+    overview.value = overviewResult;
+    exceptions.value = exceptionResult.items;
   } catch {
     overview.value = null;
     loadError.value = '异常数据加载失败，请稍后重试。';
   } finally {
     loading.value = false;
+  }
+}
+
+function toggleExceptionHistory() {
+  showAcknowledged.value = !showAcknowledged.value;
+  void loadData();
+}
+
+function openAcknowledge(item: DailyExceptionRecord) {
+  if (item.acknowledged || acknowledgeLoading.value) return;
+  selectedException.value = item;
+  acknowledgeNote.value = '';
+  acknowledgeVisible.value = true;
+}
+
+async function submitAcknowledge() {
+  const item = selectedException.value;
+  if (!item || acknowledgeLoading.value) return;
+  acknowledgeLoading.value = true;
+  try {
+    await acknowledgeDailyExceptionApi(item.id, {
+      date: selectedDate.value,
+      note: acknowledgeNote.value,
+    });
+    ElMessage.success('异常已确认并记录处理留痕');
+    acknowledgeVisible.value = false;
+    selectedException.value = null;
+    await loadData();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '异常确认失败');
+  } finally {
+    acknowledgeLoading.value = false;
   }
 }
 
@@ -160,6 +227,9 @@ onMounted(loadData);
                     : '正常'
                 }}
               </ElTag>
+              <ElButton size="small" text @click="toggleExceptionHistory">
+                {{ showAcknowledged ? '仅看待处理' : '查看已确认记录' }}
+              </ElButton>
             </div>
           </template>
           <div v-if="overview.anomalies.length" class="space-y-3">
@@ -210,9 +280,75 @@ onMounted(loadData);
         <template #header>
           <div class="sprout-table-toolbar">
             <div>
+              <h2 class="sprout-section-title">
+                {{ showAcknowledged ? '已确认异常' : '异常明细' }}
+              </h2>
+              <p class="sprout-section-caption">
+                {{ overview.date }} · 管理端可查看全机构记录并保留处理说明
+              </p>
+            </div>
+            <ElTag :type="exceptions.length ? 'warning' : 'success'">
+              {{ exceptions.length ? `${exceptions.length} 项` : '暂无记录' }}
+            </ElTag>
+          </div>
+        </template>
+        <div v-if="exceptions.length" class="space-y-3">
+          <div
+            v-for="item in exceptions"
+            :key="item.id"
+            class="rounded-lg border border-slate-100 bg-slate-50 p-4"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <ElTag
+                  :type="item.severity === 'danger' ? 'danger' : 'warning'"
+                >
+                  {{ item.label }}
+                </ElTag>
+                <span class="text-sm text-slate-500">{{
+                  categoryLabel(item.category)
+                }}</span>
+              </div>
+              <ElTag v-if="item.acknowledged" type="success">已确认</ElTag>
+            </div>
+            <p class="mt-3 text-sm leading-6 text-slate-700">
+              {{ item.message }}
+            </p>
+            <p
+              v-if="item.class_name || item.student_name"
+              class="mt-1 text-xs text-slate-500"
+            >
+              {{ item.class_name || '今日托管'
+              }}<span v-if="item.student_name"> · {{ item.student_name }}</span>
+            </p>
+            <div
+              class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"
+            >
+              <span v-if="item.acknowledged"
+                >{{ item.acknowledged_by || '工作人员' }} ·
+                {{ item.acknowledged_at || '已确认' }}</span
+              >
+              <span v-else>等待教师或管理员跟进</span>
+              <ElButton
+                v-if="!item.acknowledged"
+                size="small"
+                @click="openAcknowledge(item)"
+              >
+                标记已知
+              </ElButton>
+            </div>
+          </div>
+        </div>
+        <ElEmpty v-else description="当前视图没有异常明细" :image-size="90" />
+      </ElCard>
+
+      <ElCard class="sprout-table-card mt-4" shadow="never">
+        <template #header>
+          <div class="sprout-table-toolbar">
+            <div>
               <h2 class="sprout-section-title">按班级查看</h2>
               <p class="sprout-section-caption">
-                教师只会看到自己负责班级的数据
+                教师按负责班级查看，管理员可查看全机构数据
               </p>
             </div>
             <ElTag
@@ -247,5 +383,36 @@ onMounted(loadData);
     <ElCard v-else class="sprout-table-card" shadow="never">
       <ElEmpty description="暂无异常汇总数据" :image-size="110" />
     </ElCard>
+
+    <ElDialog
+      v-model="acknowledgeVisible"
+      title="标记异常为已知"
+      width="min(520px, 92vw)"
+    >
+      <div v-if="selectedException" class="space-y-3">
+        <div class="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+          <div class="font-medium">{{ selectedException.label }}</div>
+          <div class="mt-1 leading-6">{{ selectedException.message }}</div>
+        </div>
+        <ElInput
+          v-model="acknowledgeNote"
+          type="textarea"
+          :rows="4"
+          maxlength="200"
+          show-word-limit
+          placeholder="例如：已电话联系家长，明天补齐照片"
+        />
+      </div>
+      <template #footer>
+        <ElButton @click="acknowledgeVisible = false">取消</ElButton>
+        <ElButton
+          type="primary"
+          :loading="acknowledgeLoading"
+          @click="submitAcknowledge"
+        >
+          确认已知
+        </ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>

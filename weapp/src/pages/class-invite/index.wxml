@@ -1,0 +1,28 @@
+<view class="page class-invite-page">
+  <view class="class-invite-hero">
+    <view class="class-invite-mark">芽</view>
+    <view>
+      <view class="class-invite-kicker">豆芽成长助手</view>
+      <view class="class-invite-title">邀请家长加入</view>
+      <view class="class-invite-subtitle">{{classLabel}}</view>
+    </view>
+  </view>
+
+  <view class="class-invite-card">
+    <view class="class-invite-card-title">班级邀请二维码</view>
+    <view class="class-invite-card-text">请让家长保存图片，然后打开微信“扫一扫”，从相册选择这张图片即可进入小程序。</view>
+    <view wx:if="{{loading}}" class="class-invite-loading">正在生成二维码…</view>
+    <view wx:elif="{{imagePath}}" class="class-invite-image-wrap" bind:tap="handlePreview"><image class="class-invite-image" mode="aspectFit" src="{{imagePath}}" /></view>
+    <view wx:elif="{{errorMessage}}" class="class-invite-error"><view>{{errorMessage}}</view><t-button size="small" variant="outline" bind:tap="handleRetry">重新生成</t-button></view>
+    <view wx:if="{{imagePath}}" class="class-invite-actions"><t-button block theme="primary" loading="{{saving}}" bind:tap="handleSave">保存到手机相册</t-button><t-button block variant="outline" bind:tap="handleShareImage">直接分享二维码图片</t-button></view>
+  </view>
+
+  <view class="class-invite-steps">
+    <view class="class-invite-step"><view class="class-invite-step-number">1</view><view><view class="class-invite-step-title">家长保存二维码</view><view class="class-invite-step-text">可以保存到相册，也可以直接转发图片。</view></view></view>
+    <view class="class-invite-step"><view class="class-invite-step-number">2</view><view><view class="class-invite-step-title">微信扫一扫</view><view class="class-invite-step-text">使用微信自带扫一扫，从相册选择二维码。</view></view></view>
+    <view class="class-invite-step"><view class="class-invite-step-number">3</view><view><view class="class-invite-step-title">填写孩子姓名</view><view class="class-invite-step-text">学校和班级已自动带入，提交后由老师审核。</view></view></view>
+  </view>
+
+  <view class="privacy-note"><view class="privacy-lock">●</view>二维码只用于加入当前班级，不包含孩子信息</view>
+  <t-toast id="t-toast" />
+</view>

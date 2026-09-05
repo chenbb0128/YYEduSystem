@@ -42,6 +42,10 @@ const homeworkStudents = ref<Array<{ status: HomeworkStudentStatus }>>([]);
 const pendingLeaveCount = ref<null | number>(null);
 const pendingApplicationCount = ref<null | number>(null);
 
+function safeItems<T>(page?: null | { items?: null | T[] }) {
+  return Array.isArray(page?.items) ? page.items : [];
+}
+
 const userName = computed(
   () => userStore.userInfo?.realName || userStore.userInfo?.username || '老师',
 );
@@ -221,32 +225,32 @@ async function loadDashboard() {
 
   if (summaryResult.status === 'fulfilled') summary.value = summaryResult.value;
   if (pickupResult.status === 'fulfilled') {
-    pickupOperations.value = pickupResult.value.items;
+    pickupOperations.value = safeItems(pickupResult.value);
     const detailResults = await Promise.allSettled(
       pickupOperations.value.map((operation) =>
         getPickupOperationStudentsApi(operation.id),
       ),
     );
     pickupStudents.value = detailResults.flatMap((result) =>
-      result.status === 'fulfilled' ? result.value.items : [],
+      result.status === 'fulfilled' ? safeItems(result.value) : [],
     );
   }
   if (homeworkResult.status === 'fulfilled') {
-    homeworkTasks.value = homeworkResult.value.items;
+    homeworkTasks.value = safeItems(homeworkResult.value);
     const detailResults = await Promise.allSettled(
       homeworkTasks.value.map((task) => getHomeworkTaskStudentsApi(task.id)),
     );
     homeworkStudents.value = detailResults.flatMap((result) =>
-      result.status === 'fulfilled' ? result.value.items : [],
+      result.status === 'fulfilled' ? safeItems(result.value) : [],
     );
   }
   if (leaveResult.status === 'fulfilled') {
-    pendingLeaveCount.value = leaveResult.value.items.filter(
+    pendingLeaveCount.value = safeItems(leaveResult.value).filter(
       (request) => request.status === 'pending',
     ).length;
   }
   if (applicationResult.status === 'fulfilled') {
-    pendingApplicationCount.value = applicationResult.value.items.filter(
+    pendingApplicationCount.value = safeItems(applicationResult.value).filter(
       (application: ChildApplicationRecord) =>
         application.status === 'pending' || application.status === 'needs_info',
     ).length;

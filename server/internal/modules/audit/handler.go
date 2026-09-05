@@ -86,9 +86,16 @@ func principalActor(ctx context.Context) (string, *uint64) {
 }
 
 func RecordForContext(ctx context.Context, writer Writer, organizationID uint64, action, resourceType string, resourceID *uint64, metadataJSON, requestID string) {
+	_ = RecordForContextWithError(ctx, writer, organizationID, action, resourceType, resourceID, metadataJSON, requestID)
+}
+
+// RecordForContextWithError is the strict variant for workflows where the
+// caller must not report success until the audit record has been persisted.
+// RecordForContext remains best-effort for existing non-critical audit hooks.
+func RecordForContextWithError(ctx context.Context, writer Writer, organizationID uint64, action, resourceType string, resourceID *uint64, metadataJSON, requestID string) error {
 	if writer == nil {
-		return
+		return nil
 	}
 	actorType, actorID := principalActor(ctx)
-	_ = writer.Record(ctx, RecordParams{OrganizationID: organizationID, ActorType: actorType, ActorID: actorID, Action: action, ResourceType: resourceType, ResourceID: resourceID, MetadataJSON: metadataJSON, RequestID: requestID})
+	return writer.Record(ctx, RecordParams{OrganizationID: organizationID, ActorType: actorType, ActorID: actorID, Action: action, ResourceType: resourceType, ResourceID: resourceID, MetadataJSON: metadataJSON, RequestID: requestID})
 }

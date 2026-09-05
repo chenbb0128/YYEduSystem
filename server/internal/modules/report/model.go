@@ -36,6 +36,34 @@ type Anomaly struct {
 	Count int    `json:"count"`
 }
 
+// DailyExceptions contains actionable records for the staff workbench. It is
+// deliberately separate from DailyOverview: overview is for metrics, while
+// exceptions carry the identifiers needed to jump to the correct workflow.
+type DailyExceptions struct {
+	Date   string           `json:"date"`
+	Items  []DailyException `json:"items"`
+	Counts map[string]int   `json:"counts"`
+}
+
+type DailyException struct {
+	ID            string `json:"id"`
+	Code          string `json:"code"`
+	Category      string `json:"category"`
+	Severity      string `json:"severity"`
+	Label         string `json:"label"`
+	Message       string `json:"message"`
+	SchoolClassID uint64 `json:"school_class_id,omitempty"`
+	ClassName     string `json:"class_name,omitempty"`
+	StudentID     uint64 `json:"student_id,omitempty"`
+	StudentName   string `json:"student_name,omitempty"`
+	OperationID   uint64 `json:"operation_id,omitempty"`
+	TaskID        uint64 `json:"task_id,omitempty"`
+	Action        string `json:"action"`
+	Acknowledged  bool   `json:"acknowledged"`
+	AcknowledgedAt string `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy string `json:"acknowledged_by,omitempty"`
+}
+
 type ClassOverview struct {
 	SchoolClassID uint64 `json:"school_class_id"`
 	ClassName     string `json:"class_name,omitempty"`

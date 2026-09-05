@@ -73,6 +73,46 @@ func TestClientSendSubscribeMessage(t *testing.T) {
 	}
 }
 
+func TestClientGenerateMiniProgramCode(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/cgi-bin/token":
+			_, _ = w.Write([]byte(`{"access_token":"access-token","expires_in":7200}`))
+		case "/wxa/getwxacodeunlimit":
+			if r.URL.Query().Get("access_token") != "access-token" {
+				t.Fatalf("mini-program code token = %q", r.URL.Query().Get("access_token"))
+			}
+			var body struct {
+				Scene      string `json:"scene"`
+				Page       string `json:"page"`
+				EnvVersion string `json:"env_version"`
+				Width      int    `json:"width"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode mini-program code request: %v", err)
+			}
+			if body.Scene != "cabc.12345678" || body.Page != "pages/parent/index" || body.EnvVersion != "trial" || body.Width != 430 {
+				t.Fatalf("mini-program code body = %+v", body)
+			}
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("png-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	image, err := client.GenerateMiniProgramCode(context.Background(), MiniProgramCodeParams{Scene: "cabc.12345678", Page: "pages/parent/index", EnvVersion: "trial"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(image) != "png-bytes" {
+		t.Fatalf("image = %q", image)
+	}
+}
+
 func TestNewClientRequiresHTTPS(t *testing.T) {
 	if _, err := NewClient("app", "secret", "http://api.weixin.qq.com/sns/jscode2session", time.Second); err == nil {
 		t.Fatal("NewClient accepted an HTTP endpoint")

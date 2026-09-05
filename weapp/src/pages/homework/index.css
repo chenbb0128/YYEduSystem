@@ -26,6 +26,13 @@
   color: #29463e;
 }
 
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  justify-content: flex-end;
+}
+
 .toolbar-bottom {
   align-items: flex-end;
   margin-top: 26rpx;
@@ -436,4 +443,32 @@
 .homework-page .student-check {
   color: #555b63;
   border-bottom-color: #eee7d7;
+}
+
+.bulk-review-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  margin-bottom: 8rpx;
+  border-bottom: 1rpx solid #eee7d7;
+}
+
+.bulk-review-title {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #30343b;
+}
+
+.bulk-review-note {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: #888;
+}
+
+.bulk-review-buttons {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10rpx;
+  margin-left: 16rpx;
 }

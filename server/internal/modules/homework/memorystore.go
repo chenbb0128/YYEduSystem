@@ -124,6 +124,52 @@ func (s *MemoryStore) ReviewStudent(_ context.Context, orgID uint64, params Revi
 	return TaskStudent{}, fmt.Errorf("%w: student %d", ErrNotFound, params.StudentID)
 }
 
+func (s *MemoryStore) BulkReviewStudents(_ context.Context, orgID uint64, params BulkReviewStudentsParams) ([]TaskStudent, error) {
+	if len(params.Items) == 0 {
+		return nil, fmt.Errorf("%w: empty review batch", ErrConflict)
+	}
+	seen := make(map[uint64]struct{}, len(params.Items))
+	for _, review := range params.Items {
+		if review.StudentID == 0 {
+			return nil, fmt.Errorf("%w: student is required", ErrNotFound)
+		}
+		if !validStudentStatus(review.Status) {
+			return nil, ErrInvalidStatus
+		}
+		if _, exists := seen[review.StudentID]; exists {
+			return nil, fmt.Errorf("%w: duplicate student %d", ErrConflict, review.StudentID)
+		}
+		seen[review.StudentID] = struct{}{}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	positions := make(map[uint64]int, len(params.Items))
+	for index := range s.students {
+		item := s.students[index]
+		if item.OrganizationID == orgID && item.TaskID == params.TaskID {
+			positions[item.StudentID] = index
+		}
+	}
+	for _, review := range params.Items {
+		if _, exists := positions[review.StudentID]; !exists {
+			return nil, fmt.Errorf("%w: student %d", ErrNotFound, review.StudentID)
+		}
+	}
+	now := time.Now().UTC()
+	out := make([]TaskStudent, 0, len(params.Items))
+	for _, review := range params.Items {
+		item := &s.students[positions[review.StudentID]]
+		item.Status = review.Status
+		item.CorrectionNote = strings.TrimSpace(review.CorrectionNote)
+		item.ReviewedByUserID = cloneID(params.ReviewedByUserID)
+		item.ReviewedAt = &now
+		item.UpdatedAt = now
+		out = append(out, cloneTaskStudent(*item))
+	}
+	return out, nil
+}
+
 func (s *MemoryStore) ListStudentHomework(_ context.Context, orgID, studentID uint64) ([]StudentHomework, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

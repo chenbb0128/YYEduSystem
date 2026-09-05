@@ -1,9 +1,9 @@
 app:
-  name: tuoguan-system
+  name: xingya-growth-helper
   env: local
 
 http:
-  addr: ":8080"
+  addr: ":18082"
   read_header_timeout: 5s
   read_timeout: 15s
   write_timeout: 30s
@@ -53,6 +53,8 @@ wechat:
   app_secret: ""
   endpoint: "https://api.weixin.qq.com/sns/jscode2session"
   timeout: 5s
+  mini_program_page: "pages/parent/index"
+  mini_program_env_version: "release"
   subscribe_template_id: ""
   subscribe_page: "pages/parent/index"
   # 正式环境按微信公众平台模板 ID 填写；留空的类型不会发送微信订阅消息。
@@ -88,6 +90,19 @@ sms:
   code_ttl: 5m
   resend_interval: 60s
   max_verify_attempts: 5
+
+ocr:
+  # 错题集拍照提题。默认关闭；启用后由后端调用本地 RapidOCR 服务，前端不保存任何 OCR 配置。
+  enabled: true
+  provider: rapidocr # rapidocr or tencent
+  secret_id: ""
+  secret_key: ""
+  region: ap-guangzhou
+  endpoint: "http://127.0.0.1:9009/ocr"
+  # rapidocr 使用本地服务；tencent 使用 GeneralHandwritingOCR。
+  action: rapidocr
+  timeout: 10s
+  max_image_bytes: 5242880
 
 storage:
   provider: local

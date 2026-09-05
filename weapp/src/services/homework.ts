@@ -102,6 +102,10 @@ export function reviewHomeworkStudent(taskID: number, studentID: number, data: {
   return homeworkRequest<HomeworkTaskStudent>(`/homework-tasks/${taskID}/students/${studentID}/review`, 'POST', data)
 }
 
+export function bulkReviewHomeworkStudents(taskID: number, items: Array<{ student_id: number, status: Exclude<HomeworkStudentStatus, 'pending'>, correction_note?: string }>) {
+  return homeworkRequest<{ items: HomeworkTaskStudent[], total: number }>(`/homework-tasks/${taskID}/students/bulk-review`, 'POST', { items })
+}
+
 export function homeworkStatusLabel(status: HomeworkStudentStatus) {
   return ({ completed: '已完成', incomplete: '需订正', not_submitted: '未提交', pending: '待批改' })[status]
 }

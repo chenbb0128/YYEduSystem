@@ -134,11 +134,12 @@
       <view class="soft-card work-entry-card">
         <view class="section-head"><view><view class="section-kicker">快捷入口</view><view class="section-title">今天要做什么</view></view><view class="section-note">5 项工作</view></view>
         <view class="work-entry-list">
-          <view class="action-card action-card-pickup" bindtap="handleOpenPickup"><view class="action-icon">接</view><view class="action-copy"><view class="action-title">今日接送</view><view class="action-text">确认名单、点名、拍照记录</view></view><view class="action-arrow">›</view></view>
+          <view class="action-card action-card-pickup" bindtap="handleOpenPickup"><view class="action-icon">今</view><view class="action-copy"><view class="action-title">今日工作台</view><view class="action-text">接送点名、到班确认和收班提醒</view></view><view class="action-arrow">›</view></view>
           <view class="action-card action-card-homework" bindtap="handleOpenHomework"><view class="action-icon">作</view><view class="action-copy"><view class="action-title">作业管理</view><view class="action-text">布置作业、逐人批改反馈</view></view><view class="action-arrow">›</view></view>
           <view class="action-card action-card-application" bindtap="handleOpenApplications"><view class="action-icon">申</view><view class="action-copy"><view class="action-title">家长申请</view><view class="action-text">审核入班，自动建立绑定</view></view><view class="action-arrow">›</view></view>
           <view class="action-card action-card-homework" bindtap="handleOpenMeals"><view class="action-icon">食</view><view class="action-copy"><view class="action-title">餐食管理</view><view class="action-text">录入菜单、上传实际餐食照片</view></view><view class="action-arrow">›</view></view>
-          <view class="action-card action-card-application" bindtap="handleOpenSummary"><view class="action-icon">结</view><view class="action-copy"><view class="action-title">每日总结</view><view class="action-text">生成、编辑并发布当天托管总结</view></view><view class="action-arrow">›</view></view>
+      <view class="action-card action-card-application" bindtap="handleOpenSummary"><view class="action-icon">结</view><view class="action-copy"><view class="action-title">每日总结</view><view class="action-text">生成、编辑并发布当天托管总结</view></view><view class="action-arrow">›</view></view>
+      <view class="action-card action-card-application" bindtap="handleOpenExceptions"><view class="action-icon">异</view><view class="action-copy"><view class="action-title">异常中心</view><view class="action-text">集中处理接送、作业和请假待办</view></view><view class="action-arrow">›</view></view>
         </view>
       </view>
     </block>

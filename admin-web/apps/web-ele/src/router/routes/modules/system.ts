@@ -48,6 +48,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    name: 'Wrongbook',
+    path: '/wrongbook',
+    component: () => import('#/views/wrongbook/index.vue'),
+    meta: {
+      authority: ['homework:view'],
+      icon: 'lucide:file-question',
+      order: 6.5,
+      title: '学生错题集',
+    },
+  },
+  {
     name: 'Meals',
     path: '/meals',
     component: () => import('#/views/meals/index.vue'),

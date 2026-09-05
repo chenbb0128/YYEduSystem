@@ -13,6 +13,7 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -182,7 +183,7 @@ func (h *Handler) generate(c *gin.Context) {
 			return
 		}
 	}
-	date := time.Now().UTC()
+	date := businessdate.Today(time.Now())
 	if strings.TrimSpace(req.Date) != "" {
 		parsed, err := parseDate(req.Date)
 		if err != nil {

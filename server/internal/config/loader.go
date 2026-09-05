@@ -49,6 +49,8 @@ func Load(path string) (Config, error) {
 		"wechat.app_secret",
 		"wechat.endpoint",
 		"wechat.timeout",
+		"wechat.mini_program_page",
+		"wechat.mini_program_env_version",
 		"wechat.subscribe_template_id",
 		"wechat.subscribe_page",
 		"wechat.subscribe_templates.pickup",
@@ -71,6 +73,15 @@ func Load(path string) (Config, error) {
 		"sms.code_ttl",
 		"sms.resend_interval",
 		"sms.max_verify_attempts",
+		"ocr.enabled",
+		"ocr.provider",
+		"ocr.secret_id",
+		"ocr.secret_key",
+		"ocr.region",
+		"ocr.endpoint",
+		"ocr.timeout",
+		"ocr.action",
+		"ocr.max_image_bytes",
 		"storage.upload_dir",
 		"storage.url_signing_secret",
 		"storage.provider",
@@ -180,6 +191,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("wechat.enabled", false)
 	v.SetDefault("wechat.endpoint", "https://api.weixin.qq.com/sns/jscode2session")
 	v.SetDefault("wechat.timeout", 5*time.Second)
+	v.SetDefault("wechat.mini_program_page", "pages/parent/index")
+	v.SetDefault("wechat.mini_program_env_version", "release")
 	v.SetDefault("wechat.subscribe_page", "pages/parent/index")
 	v.SetDefault("wechat.subscribe_templates.pickup", "")
 	v.SetDefault("wechat.subscribe_templates.meal", "")
@@ -201,6 +214,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("sms.code_ttl", 5*time.Minute)
 	v.SetDefault("sms.resend_interval", time.Minute)
 	v.SetDefault("sms.max_verify_attempts", 5)
+	v.SetDefault("ocr.enabled", false)
+	v.SetDefault("ocr.provider", "rapidocr")
+	v.SetDefault("ocr.secret_id", "")
+	v.SetDefault("ocr.secret_key", "")
+	v.SetDefault("ocr.region", "ap-guangzhou")
+	v.SetDefault("ocr.endpoint", "http://127.0.0.1:9009/ocr")
+	v.SetDefault("ocr.timeout", 10*time.Second)
+	v.SetDefault("ocr.action", "rapidocr")
+	v.SetDefault("ocr.max_image_bytes", int64(5<<20))
 	v.SetDefault("storage.upload_dir", "data/uploads")
 	v.SetDefault("storage.url_signing_secret", "")
 	v.SetDefault("storage.provider", "local")

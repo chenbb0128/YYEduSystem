@@ -16,7 +16,17 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
+	wechat "github.com/chenbb0128/tuoguan-system-server/internal/platform/wechat"
 )
+
+type testMiniProgramCodeGenerator struct {
+	params wechat.MiniProgramCodeParams
+}
+
+func (g *testMiniProgramCodeGenerator) GenerateMiniProgramCode(_ context.Context, params wechat.MiniProgramCodeParams) ([]byte, error) {
+	g.params = params
+	return []byte("test-png"), nil
+}
 
 func TestParentBindingLeaveAndPickupReadModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -146,6 +156,77 @@ func TestParentBindingLeaveAndPickupReadModel(t *testing.T) {
 	}
 }
 
+func TestTeacherLeaveListAndReviewAreScopedToAssignedClass(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	master := masterdata.NewMemoryStore()
+	school, err := master.CreateSchool(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolParams{Name: "实验小学"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	term, err := master.CreateAcademicTerm(ctx, masterdata.DefaultOrganizationID, masterdata.CreateAcademicTermParams{Name: "2026 秋季", IsCurrent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	classOne, err := master.CreateSchoolClass(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: "三年级", Name: "1班"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	classTwo, err := master.CreateSchoolClass(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: "三年级", Name: "2班"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	studentOne, err := master.CreateStudent(ctx, masterdata.DefaultOrganizationID, masterdata.CreateStudentParams{SchoolID: school.ID, TermID: term.ID, SchoolClassID: classOne.ID, Name: "小明"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	studentTwo, err := master.CreateStudent(ctx, masterdata.DefaultOrganizationID, masterdata.CreateStudentParams{SchoolID: school.ID, TermID: term.ID, SchoolClassID: classTwo.ID, Name: "小雨"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parents := NewMemoryStore()
+	account, err := parents.CreateAccount(ctx, masterdata.DefaultOrganizationID, CreateAccountParams{OpenID: "teacher-scope-parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := parents.CreateLeaveRequest(ctx, masterdata.DefaultOrganizationID, CreateLeaveRequestParams{StudentID: studentOne.ID, ParentAccountID: account.ID, LeaveDate: date("2026-09-02"), Reason: "发热"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := parents.CreateLeaveRequest(ctx, masterdata.DefaultOrganizationID, CreateLeaveRequestParams{StudentID: studentTwo.ID, ParentAccountID: account.ID, LeaveDate: date("2026-09-02"), Reason: "外出"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignments := assignment.NewMemoryStore()
+	teacher := identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: 77, Role: identity.UserRoleTeacher}
+	if _, err := assignments.Create(ctx, masterdata.DefaultOrganizationID, assignment.CreateParams{TeacherUserID: teacher.SubjectID, SchoolClassID: classOne.ID}); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(parents, master, pickup.NewMemoryStore())
+	handler.SetStaffScope(assignments)
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	list := parentRequestAs(t, router, teacher, http.MethodGet, "/api/v1/leave-requests?date=2026-09-02&status=pending", "")
+	var page struct {
+		Items []leaveRequestView `json:"items"`
+		Total int                `json:"total"`
+	}
+	decodeParentData(t, list, &page)
+	if page.Total != 1 || page.Items[0].ID != first.ID || page.Items[0].StudentName != "小明" || page.Items[0].ClassName != "三年级1班" {
+		t.Fatalf("teacher leave list = %+v", page)
+	}
+
+	forbidden := parentRequestAs(t, router, teacher, http.MethodPost, fmt.Sprintf("/api/v1/leave-requests/%d/review", second.ID), `{"status":"approved"}`)
+	if forbidden.Code != http.StatusNotFound {
+		t.Fatalf("unassigned leave review status = %d, want 404: %s", forbidden.Code, forbidden.Body.String())
+	}
+	approved := parentRequestAs(t, router, teacher, http.MethodPost, fmt.Sprintf("/api/v1/leave-requests/%d/review", first.ID), `{"status":"approved","teacher_note":"已确认"}`)
+	if approved.Code != http.StatusOK {
+		t.Fatalf("assigned leave review status = %d: %s", approved.Code, approved.Body.String())
+	}
+}
+
 func TestParentPickupPlanChangeAndNotificationRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.Background()
@@ -248,14 +329,71 @@ func TestTeacherCanRecordVerbalLeaveForAssignedStudent(t *testing.T) {
 	}
 
 	duplicate := parentRequestAs(t, router, teacher, http.MethodPost, "/api/v1/leave-requests/teacher", `{"student_id":`+fmt.Sprint(student.ID)+`,"leave_date":"2026-09-01","reason":"重复登记"}`)
-	if duplicate.Code != http.StatusBadRequest {
-		t.Fatalf("duplicate teacher leave status = %d: %s", duplicate.Code, duplicate.Body.String())
+	if duplicate.Code != http.StatusCreated {
+		t.Fatalf("idempotent teacher leave status = %d: %s", duplicate.Code, duplicate.Body.String())
+	}
+	var duplicateLeave leaveRequestView
+	decodeParentData(t, duplicate, &duplicateLeave)
+	if duplicateLeave.ID != leave.ID || duplicateLeave.Status != LeaveStatusApproved {
+		t.Fatalf("idempotent teacher leave = %+v, original = %+v", duplicateLeave, leave)
 	}
 
 	other := identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: 10, Role: identity.UserRoleTeacher}
 	forbidden := parentRequestAs(t, router, other, http.MethodPost, "/api/v1/leave-requests/teacher", `{"student_id":`+fmt.Sprint(student.ID)+`,"leave_date":"2026-09-02","reason":"无权限"}`)
 	if forbidden.Code != http.StatusBadRequest {
 		t.Fatalf("unassigned teacher status = %d: %s", forbidden.Code, forbidden.Body.String())
+	}
+}
+
+func TestClassInviteQRCodeAndTokenFlow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	master := masterdata.NewMemoryStore()
+	school, err := master.CreateSchool(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolParams{Name: "实验小学"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	term, err := master.CreateAcademicTerm(ctx, masterdata.DefaultOrganizationID, masterdata.CreateAcademicTermParams{Name: "2026-2027 第一学期", StartsOn: date("2026-09-01"), EndsOn: date("2027-01-31"), IsCurrent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schoolClass, err := master.CreateSchoolClass(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: "三年级", Name: "1班"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	teacher := identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: 21, OrganizationID: masterdata.DefaultOrganizationID, Role: identity.UserRoleTeacher}
+	assignments := assignment.NewMemoryStore()
+	if _, err := assignments.Create(ctx, masterdata.DefaultOrganizationID, assignment.CreateParams{TeacherUserID: teacher.SubjectID, SchoolClassID: schoolClass.ID}); err != nil {
+		t.Fatal(err)
+	}
+	generator := &testMiniProgramCodeGenerator{}
+	handler := NewHandler(NewMemoryStore(), master, pickup.NewMemoryStore())
+	handler.SetStaffScope(assignments)
+	handler.SetMiniProgramCodeGenerator(generator)
+	handler.SetMiniProgramCodeConfig("pages/parent/index", "trial")
+	handler.SetClassInviteSecret("test-class-invite-secret")
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	qrcode := parentRequestAs(t, router, teacher, http.MethodGet, fmt.Sprintf("/api/v1/class-invites/qrcode?school_class_id=%d", schoolClass.ID), "")
+	if qrcode.Code != http.StatusOK || qrcode.Header().Get("Content-Type") != "image/png" || qrcode.Body.String() != "test-png" {
+		t.Fatalf("qrcode response = %d %q %q", qrcode.Code, qrcode.Header().Get("Content-Type"), qrcode.Body.String())
+	}
+	if generator.params.EnvVersion != "trial" || generator.params.Page != "pages/parent/index" || generator.params.Scene != handler.classInviteToken(masterdata.DefaultOrganizationID, schoolClass.ID) {
+		t.Fatalf("qrcode params = %+v", generator.params)
+	}
+
+	token := handler.classInviteToken(masterdata.DefaultOrganizationID, schoolClass.ID)
+	invite := parentRequestAs(t, router, identity.Principal{Kind: identity.PrincipalKindParent, SubjectID: 31, OrganizationID: masterdata.DefaultOrganizationID, Role: identity.UserRole("parent")}, http.MethodGet, "/api/v1/parent/class-invites/"+token, "")
+	var inviteData classInviteView
+	decodeParentData(t, invite, &inviteData)
+	if inviteData.SchoolClassID != schoolClass.ID || inviteData.SchoolName != school.Name || inviteData.Label != "实验小学 · 三年级1班" {
+		t.Fatalf("invite = %+v", inviteData)
+	}
+
+	invalid := parentRequestAs(t, router, identity.Principal{Kind: identity.PrincipalKindParent, SubjectID: 31, OrganizationID: masterdata.DefaultOrganizationID, Role: identity.UserRole("parent")}, http.MethodGet, "/api/v1/parent/class-invites/cinvalid.invalid", "")
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid invite status = %d: %s", invalid.Code, invalid.Body.String())
 	}
 }
 

@@ -33,13 +33,14 @@ export interface ChildApplication {
 
 export interface CreateChildApplicationPayload {
   student_name: string
+  invite_token?: string
   school_name?: string
   grade?: string
   class_name?: string
   class_text?: string
   school_class_id?: number
   guardian_name?: string
-  guardian_phone: string
+  guardian_phone?: string
   relationship?: string
   notes?: string
 }

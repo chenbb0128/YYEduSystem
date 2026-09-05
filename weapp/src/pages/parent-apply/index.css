@@ -599,3 +599,284 @@ page {
   font-size: 18rpx;
   color: #52c46a;
 }
+
+/* 首次进入流程：只突出必要信息，申请提交后原地展示状态。 */
+.first-entry-page {
+  min-height: 100vh;
+  padding-bottom: 70rpx;
+  background: #fff7e6;
+}
+
+.first-entry-hero {
+  display: flex;
+  gap: 22rpx;
+  align-items: center;
+  padding: 32rpx 30rpx;
+  margin: 20rpx 0 24rpx;
+  background: #e8f8e8;
+  border: 2rpx solid rgb(255 255 255 / 70%);
+  border-radius: 32rpx;
+  box-shadow: 0 4rpx 16rpx rgb(0 0 0 / 6%);
+}
+
+.first-entry-mark {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 84rpx;
+  height: 84rpx;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(145deg, #52c46a, #28a84b);
+  border-radius: 30rpx 30rpx 30rpx 12rpx;
+}
+
+.first-entry-copy {
+  min-width: 0;
+}
+
+.first-entry-kicker,
+.first-entry-form-kicker,
+.first-entry-history-kicker {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #168a31;
+}
+
+.first-entry-title {
+  margin-top: 8rpx;
+  font-size: 44rpx;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #1a1a1a;
+}
+
+.first-entry-subtitle {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #5f7665;
+}
+
+.first-entry-invite-note,
+.first-entry-success-card,
+.first-entry-wait-card,
+.first-entry-review-note,
+.first-entry-rejected-note {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-start;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  border-radius: 26rpx;
+}
+
+.first-entry-invite-note {
+  background: #edf7ff;
+  border: 2rpx solid #cfe5f8;
+}
+
+.first-entry-success-card {
+  align-items: center;
+  background: #e8f8e8;
+  border: 2rpx solid #cceecf;
+}
+
+.first-entry-wait-card {
+  background: #fff9e7;
+  border: 2rpx solid #ffe3aa;
+}
+
+.first-entry-review-note,
+.first-entry-rejected-note {
+  display: block;
+  background: #fff9e7;
+  border: 2rpx solid #ffe3aa;
+}
+
+.first-entry-rejected-note {
+  background: #fff0ea;
+  border-color: #ffd4c8;
+}
+
+.first-entry-invite-icon,
+.first-entry-success-icon,
+.first-entry-status-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 54rpx;
+  height: 54rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #fff;
+  background: #4096ff;
+  border-radius: 18rpx;
+}
+
+.first-entry-success-icon {
+  background: #52c46a;
+}
+
+.first-entry-status-icon {
+  color: #a6500b;
+  background: #ffd878;
+}
+
+.first-entry-invite-title,
+.first-entry-success-title,
+.first-entry-status-title,
+.first-entry-review-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #30343b;
+}
+
+.first-entry-invite-text,
+.first-entry-success-text,
+.first-entry-status-text,
+.first-entry-status-child,
+.first-entry-review-text {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: #66766b;
+}
+
+.first-entry-status-child {
+  color: #8e651e;
+}
+
+.first-entry-success-copy,
+.first-entry-status-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.first-entry-form-card {
+  padding: 30rpx;
+  margin-bottom: 24rpx;
+  background: #fff;
+  border: 2rpx solid rgb(255 255 255 / 70%);
+  border-radius: 30rpx;
+  box-shadow: 0 4rpx 16rpx rgb(0 0 0 / 6%);
+}
+
+.first-entry-form-heading,
+.first-entry-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.first-entry-form-title,
+.first-entry-history-title {
+  margin-top: 6rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #1a1a1a;
+}
+
+.first-entry-form-count,
+.first-entry-history-count {
+  padding: 8rpx 14rpx;
+  font-size: 22rpx;
+  color: #168a31;
+  background: #e8f8e8;
+  border-radius: 999rpx;
+}
+
+.first-entry-field {
+  margin-top: 28rpx;
+}
+
+.first-entry-label {
+  display: block;
+  margin-bottom: 12rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #444;
+}
+
+.first-entry-control {
+  min-height: 86rpx;
+}
+
+.first-entry-help {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #999;
+}
+
+.first-entry-optional-toggle {
+  padding: 22rpx 0 4rpx;
+  font-size: 24rpx;
+  color: #ff7020;
+}
+
+.first-entry-optional-toggle text {
+  margin-left: 8rpx;
+  font-size: 25rpx;
+}
+
+.first-entry-optional-field {
+  margin-top: 12rpx;
+}
+
+.first-entry-optional-phone {
+  margin-bottom: 18rpx;
+}
+
+.first-entry-submit {
+  margin-top: 28rpx;
+}
+
+.first-entry-history {
+  padding: 28rpx 30rpx;
+  margin-bottom: 24rpx;
+}
+
+.first-entry-history-row {
+  display: flex;
+  gap: 14rpx;
+  align-items: center;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid #f4ead8;
+}
+
+.first-entry-history-row:last-child {
+  border-bottom: 0;
+}
+
+.first-entry-history-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.first-entry-history-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.first-entry-history-meta,
+.first-entry-history-note {
+  margin-top: 6rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 22rpx;
+  line-height: 1.45;
+  color: #888;
+  white-space: nowrap;
+}
+
+.first-entry-history-note {
+  color: #a6500b;
+}

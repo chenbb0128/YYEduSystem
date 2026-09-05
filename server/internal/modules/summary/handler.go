@@ -17,6 +17,7 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/meal"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/parent"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -397,7 +398,7 @@ func (h *Handler) parentSummary(c *gin.Context) {
 		response.Error(c, response.Unauthorized())
 		return
 	}
-	date := time.Now().UTC()
+	date := businessdate.Today(time.Now())
 	if strings.TrimSpace(c.Query("date")) != "" {
 		parsed, err := parseDate(c.Query("date"))
 		if err != nil {

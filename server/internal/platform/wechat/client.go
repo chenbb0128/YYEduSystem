@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,6 +83,16 @@ type SubscribeMessageParams struct {
 	Data       map[string]string
 }
 
+// MiniProgramCodeParams describes the payload accepted by WeChat's
+// getwxacodeunlimit endpoint. Scene is intentionally opaque to WeChat users;
+// the application signs and validates it before accepting an enrollment.
+type MiniProgramCodeParams struct {
+	Scene      string
+	Page       string
+	EnvVersion string
+	Width      int
+}
+
 type subscribeDataValue struct {
 	Value string `json:"value"`
 }
@@ -143,6 +154,68 @@ func (c *Client) SendSubscribeMessage(ctx context.Context, params SubscribeMessa
 		return fmt.Errorf("wechat subscribe message failed: %d %s", result.ErrCode, result.ErrMsg)
 	}
 	return nil
+}
+
+// GenerateMiniProgramCode creates an official WeChat mini-program code. The
+// endpoint returns image bytes on success and a JSON error object on failure.
+func (c *Client) GenerateMiniProgramCode(ctx context.Context, params MiniProgramCodeParams) ([]byte, error) {
+	if strings.TrimSpace(params.Scene) == "" {
+		return nil, fmt.Errorf("wechat mini-program code scene is required")
+	}
+	accessToken, err := c.accessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	width := params.Width
+	if width <= 0 {
+		width = 430
+	}
+	envVersion := strings.TrimSpace(params.EnvVersion)
+	if envVersion == "" {
+		envVersion = "release"
+	}
+	body, err := json.Marshal(map[string]any{
+		"scene":       params.Scene,
+		"page":        strings.TrimPrefix(strings.TrimSpace(params.Page), "/"),
+		"check_path":  false,
+		"env_version": envVersion,
+		"width":       width,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode wechat mini-program code request: %w", err)
+	}
+	requestURL := c.baseURL + "/wxa/getwxacodeunlimit?access_token=" + url.QueryEscape(accessToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("wechat mini-program code request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("wechat mini-program code returned http %d", resp.StatusCode)
+	}
+	image, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read wechat mini-program code: %w", err)
+	}
+	trimmed := strings.TrimSpace(string(image))
+	if strings.HasPrefix(trimmed, "{") {
+		var result struct {
+			ErrCode int    `json:"errcode"`
+			ErrMsg  string `json:"errmsg"`
+		}
+		if err := json.Unmarshal(image, &result); err == nil && result.ErrCode != 0 {
+			return nil, fmt.Errorf("wechat mini-program code failed: %d %s", result.ErrCode, result.ErrMsg)
+		}
+	}
+	if len(image) == 0 {
+		return nil, fmt.Errorf("wechat mini-program code response is empty")
+	}
+	return image, nil
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {

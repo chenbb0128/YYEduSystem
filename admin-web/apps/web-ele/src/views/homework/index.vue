@@ -12,6 +12,7 @@ import type {
 import type { TeacherAssignmentRecord } from '#/api/teacher-assignments';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { useUserStore } from '@vben/stores';
 
@@ -70,6 +71,20 @@ const students = ref<StudentRecord[]>([]);
 const assignments = ref<TeacherAssignmentRecord[]>([]);
 const reviewNotes = reactive<Record<number, string>>({});
 const userStore = useUserStore();
+const router = useRouter();
+
+function safeItems<T>(page?: null | { items?: null | T[] }) {
+  return Array.isArray(page?.items) ? page.items : [];
+}
+
+function normalizeHomeworkTask(task: HomeworkTaskRecord): HomeworkTaskRecord {
+  return {
+    ...task,
+    attachment_urls: Array.isArray(task.attachment_urls)
+      ? task.attachment_urls
+      : [],
+  };
+}
 
 const currentRole = computed(() => userStore.userInfo?.roles?.[0] || '');
 const availableSchoolClasses = computed(() => {
@@ -137,10 +152,10 @@ async function loadReferences() {
         getStudentsApi(),
         getTeacherAssignmentsApi(),
       ]);
-    schools.value = schoolResult.items;
-    schoolClasses.value = classResult.items;
-    students.value = studentResult.items;
-    assignments.value = assignmentResult.items;
+    schools.value = safeItems(schoolResult);
+    schoolClasses.value = safeItems(classResult);
+    students.value = safeItems(studentResult);
+    assignments.value = safeItems(assignmentResult);
   } catch {
     loadError.value = '作业相关班级数据加载失败，请稍后重试。';
   }
@@ -151,7 +166,7 @@ async function loadTasks() {
   loadError.value = '';
   try {
     const result = await getHomeworkTasksApi({ date: selectedDate.value });
-    tasks.value = result.items;
+    tasks.value = safeItems(result).map((item) => normalizeHomeworkTask(item));
     if (currentTask.value) {
       const refreshed = tasks.value.find(
         (item) => item.id === currentTask.value?.id,
@@ -173,12 +188,12 @@ async function loadTasks() {
 }
 
 async function openTask(task: HomeworkTaskRecord) {
-  currentTask.value = task;
+  currentTask.value = normalizeHomeworkTask(task);
   detailLoading.value = true;
   try {
     const result = await getHomeworkTaskStudentsApi(task.id);
-    taskStudents.value = result.items;
-    for (const student of result.items) {
+    taskStudents.value = safeItems(result);
+    for (const student of taskStudents.value) {
       reviewNotes[student.student_id] = student.correction_note;
     }
   } catch (error) {
@@ -203,6 +218,10 @@ function openCreateDialog() {
   attachmentNames.value = [];
   syncStudents();
   dialogVisible.value = true;
+}
+
+function openWrongbook() {
+  void router.push('/wrongbook');
 }
 
 function openAttachmentPicker() {
@@ -311,6 +330,7 @@ onMounted(async () => {
           value-format="YYYY-MM-DD"
           @change="loadTasks"
         />
+        <ElButton @click="openWrongbook">学生错题集</ElButton>
         <ElButton
           v-access:code="'homework:write'"
           type="primary"

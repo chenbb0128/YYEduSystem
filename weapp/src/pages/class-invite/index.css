@@ -1,0 +1,156 @@
+page {
+  background: #fff7e6;
+}
+
+.class-invite-page {
+  min-height: 100vh;
+  padding: 24rpx 30rpx 70rpx;
+  background: #fff7e6;
+}
+
+.class-invite-hero {
+  display: flex;
+  gap: 20rpx;
+  align-items: center;
+  padding: 28rpx 24rpx;
+  margin-bottom: 24rpx;
+  background: #e8f8e8;
+  border: 2rpx solid #d4efd7;
+  border-radius: 28rpx;
+}
+
+.class-invite-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76rpx;
+  height: 76rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(145deg, #52c46a, #28a84b);
+  border-radius: 26rpx 26rpx 26rpx 10rpx;
+}
+
+.class-invite-kicker {
+  font-size: 23rpx;
+  font-weight: 600;
+  color: #168a31;
+}
+
+.class-invite-title {
+  margin-top: 5rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #20251f;
+}
+
+.class-invite-subtitle {
+  margin-top: 5rpx;
+  font-size: 25rpx;
+  color: #607464;
+}
+
+.class-invite-card {
+  padding: 30rpx 24rpx 26rpx;
+  text-align: center;
+  background: #fff;
+  border: 2rpx solid #f1e5d2;
+  border-radius: 30rpx;
+  box-shadow: 0 6rpx 20rpx rgb(57 47 27 / 6%);
+}
+
+.class-invite-card-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #292d29;
+}
+
+.class-invite-card-text {
+  padding: 12rpx 14rpx 0;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: #718071;
+}
+
+.class-invite-loading,
+.class-invite-error {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+  justify-content: center;
+  min-height: 420rpx;
+  font-size: 25rpx;
+  line-height: 1.5;
+  color: #8a7558;
+}
+
+.class-invite-error {
+  flex-direction: column;
+  padding: 60rpx 30rpx;
+  color: #a6500b;
+}
+
+.class-invite-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 420rpx;
+  margin-top: 18rpx;
+  background: #fff;
+}
+
+.class-invite-image {
+  width: 420rpx;
+  height: 420rpx;
+}
+
+.class-invite-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.class-invite-steps {
+  padding: 26rpx 24rpx;
+  margin-top: 24rpx;
+  background: #fffdf8;
+  border: 2rpx solid #f1e5d2;
+  border-radius: 26rpx;
+}
+
+.class-invite-step {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-start;
+  padding: 14rpx 0;
+}
+
+.class-invite-step-number {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44rpx;
+  height: 44rpx;
+  font-size: 23rpx;
+  font-weight: 700;
+  color: #fff;
+  background: #52c46a;
+  border-radius: 50%;
+}
+
+.class-invite-step-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #303530;
+}
+
+.class-invite-step-text {
+  margin-top: 4rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: #7f8a7f;
+}

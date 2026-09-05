@@ -6,9 +6,12 @@
     "pages/child-applications/index",
     "pages/parent/index",
     "pages/parent-apply/index",
+    "pages/class-invite/index",
     "pages/homework/index",
+    "pages/wrongbook/index",
     "pages/meals/index",
-    "pages/summary/index"
+    "pages/summary/index",
+    "pages/exceptions/index"
   ],
   "window": {
     "navigationBarBackgroundColor": "#FFF7E6",

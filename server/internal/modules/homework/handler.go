@@ -85,6 +85,7 @@ func (h *Handler) RegisterStaffRoutes(api *gin.RouterGroup) {
 	api.POST("/uploads/homework", h.uploadHomeworkPhoto)
 	api.GET("/homework-tasks/:id/students", h.listTaskStudents)
 	api.POST("/homework-tasks/:id/students/:student_id/review", h.reviewStudent)
+	api.POST("/homework-tasks/:id/students/bulk-review", h.bulkReviewStudents)
 }
 
 func (h *Handler) RegisterParentRoutes(api *gin.RouterGroup) {
@@ -172,6 +173,43 @@ func (r createTaskRequest) Validate() []response.ValidationDetail {
 type reviewStudentRequest struct {
 	Status         string `json:"status"`
 	CorrectionNote string `json:"correction_note"`
+}
+
+type bulkReviewItemRequest struct {
+	StudentID      uint64 `json:"student_id"`
+	Status         string `json:"status"`
+	CorrectionNote string `json:"correction_note"`
+}
+
+type bulkReviewRequest struct {
+	Items []bulkReviewItemRequest `json:"items"`
+}
+
+func (r bulkReviewRequest) Validate() []response.ValidationDetail {
+	if len(r.Items) == 0 {
+		return []response.ValidationDetail{{Field: "items", Reason: "required"}}
+	}
+	if len(r.Items) > 100 {
+		return []response.ValidationDetail{{Field: "items", Reason: "too_many"}}
+	}
+	seen := make(map[uint64]struct{}, len(r.Items))
+	details := make([]response.ValidationDetail, 0)
+	for _, item := range r.Items {
+		if item.StudentID == 0 {
+			details = append(details, response.ValidationDetail{Field: "items.student_id", Reason: "required"})
+		}
+		if !validStudentStatus(item.Status) {
+			details = append(details, response.ValidationDetail{Field: "items.status", Reason: "invalid_value"})
+		}
+		if _, exists := seen[item.StudentID]; exists {
+			details = append(details, response.ValidationDetail{Field: "items.student_id", Reason: "duplicate"})
+		}
+		seen[item.StudentID] = struct{}{}
+		if len([]rune(item.CorrectionNote)) > 500 {
+			details = append(details, response.ValidationDetail{Field: "items.correction_note", Reason: "too_long"})
+		}
+	}
+	return details
 }
 
 func (r reviewStudentRequest) Validate() []response.ValidationDetail {
@@ -453,6 +491,58 @@ func (h *Handler) reviewStudent(c *gin.Context) {
 	}
 	h.recordAudit(c, "homework.student.review", "homework_student", item.ID)
 	response.OK(c, toTaskStudentView(item))
+}
+
+func (h *Handler) bulkReviewStudents(c *gin.Context) {
+	if !canWriteHomework(c) {
+		return
+	}
+	taskID, ok := parsePathID(c, "id")
+	if !ok {
+		return
+	}
+	if _, ok := h.taskForPrincipal(c, taskID); !ok {
+		return
+	}
+	var req bulkReviewRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	principal, scoped := staffPrincipal(c)
+	var reviewerID *uint64
+	if scoped {
+		reviewerID = &principal.SubjectID
+	}
+	current, err := h.store.ListTaskStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), taskID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	previous := make(map[uint64]string, len(current))
+	for _, item := range current {
+		previous[item.StudentID] = item.Status
+	}
+	items := make([]BulkReviewItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		items = append(items, BulkReviewItem{StudentID: item.StudentID, Status: item.Status, CorrectionNote: strings.TrimSpace(item.CorrectionNote)})
+	}
+	updated, err := h.store.BulkReviewStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), BulkReviewStudentsParams{TaskID: taskID, Items: items, ReviewedByUserID: reviewerID})
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	for _, item := range updated {
+		if previous[item.StudentID] != item.Status {
+			_ = h.notifyHomeworkReview(c, item, item.Status)
+		}
+	}
+	h.recordAudit(c, "homework.student.bulk_review", "homework_task", taskID)
+	out := make([]taskStudentView, 0, len(updated))
+	for _, item := range updated {
+		out = append(out, toTaskStudentView(item))
+	}
+	response.OK(c, gin.H{"items": out, "total": len(out)})
 }
 
 func (h *Handler) notifyHomeworkPublished(c *gin.Context, task Task, roster []StudentRef) error {

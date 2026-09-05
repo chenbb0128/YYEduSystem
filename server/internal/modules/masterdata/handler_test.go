@@ -76,6 +76,40 @@ func TestHandlerCreatesStudentProfileAndAutoCategorizes(t *testing.T) {
 	}
 }
 
+func TestHandlerImportsStudentsWithRowIssuesAndSkipsDuplicates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(NewMemoryStore())
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	assertStatus(t, router, http.MethodPost, "/api/v1/students/profile", `{"school_name":"实验小学","grade":"三年级","class_name":"1班","name":"小明","guardian_phone":"13800000000"}`, http.StatusCreated)
+	imported := assertStatus(t, router, http.MethodPost, "/api/v1/students/import", `{"items":[{"school_name":"实验小学","grade":"三年级","class_name":"1班","name":"小明","guardian_phone":"13800000000"},{"school_name":"实验小学","grade":"三年级","class_name":"1班","name":"小红","guardian_phone":"13900000000"},{"school_name":"实验小学","grade":"三年级","class_name":"1班"}]}`, http.StatusOK)
+	var result struct {
+		Created           []studentView        `json:"created"`
+		SkippedDuplicates []studentImportIssue `json:"skipped_duplicates"`
+		Invalid           []studentImportIssue `json:"invalid"`
+	}
+	decodeData(t, imported, &result)
+	if len(result.Created) != 1 || result.Created[0].Name != "小红" {
+		t.Fatalf("imported students = %+v, want only 小红", result.Created)
+	}
+	if len(result.SkippedDuplicates) != 1 || result.SkippedDuplicates[0].Row != 2 {
+		t.Fatalf("duplicate issues = %+v, want CSV row 2", result.SkippedDuplicates)
+	}
+	if len(result.Invalid) != 1 || result.Invalid[0].Row != 4 || result.Invalid[0].Field == "" {
+		t.Fatalf("invalid issues = %+v, want row 4 field detail", result.Invalid)
+	}
+
+	var page struct {
+		Items []studentView `json:"items"`
+		Total int           `json:"total"`
+	}
+	decodeData(t, assertStatus(t, router, http.MethodGet, "/api/v1/students", ""), &page)
+	if page.Total != 2 {
+		t.Fatalf("student total after import = %d, want 2", page.Total)
+	}
+}
+
 func TestHandlerRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(NewMemoryStore())

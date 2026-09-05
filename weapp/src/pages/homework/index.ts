@@ -1,6 +1,6 @@
 import type { HomeworkStudentStatus, HomeworkTask, HomeworkTaskStudent } from '@/services/homework'
 import type { SchoolClassRecord, StudentRecord } from '@/services/master-data'
-import { createHomeworkTask, getHomeworkTasks, getHomeworkTaskStudents, homeworkPhotoURL, homeworkStatusLabel, reviewHomeworkStudent, uploadHomeworkPhoto } from '@/services/homework'
+import { bulkReviewHomeworkStudents, createHomeworkTask, getHomeworkTasks, getHomeworkTaskStudents, homeworkPhotoURL, homeworkStatusLabel, reviewHomeworkStudent, uploadHomeworkPhoto } from '@/services/homework'
 import { getSchoolClasses, getStudents } from '@/services/master-data'
 import { getToday } from '@/services/pickup'
 import { getTeacherAssignments } from '@/services/teacher-assignments'
@@ -154,6 +154,11 @@ Page({
     this.updateCandidateStudents(selectedClass.id)
     this.handleSelectAllStudents()
   },
+  handleOpenWrongbook() {
+    if (typeof wx !== 'undefined') {
+      wx.navigateTo({ url: '/pages/wrongbook/index?mode=teacher' })
+    }
+  },
   closeCreate() {
     this.setData({ showCreate: false })
   },
@@ -246,6 +251,47 @@ Page({
     const studentID = Number(event.currentTarget.dataset.studentId)
     const taskStudents = this.data.taskStudents.map(item => item.student_id === studentID ? { ...item, correction_note: event.detail.value } : item)
     this.setData({ taskStudents })
+  },
+  async bulkReview(status: Exclude<HomeworkStudentStatus, 'pending'>) {
+    const taskID = this.data.selectedTaskID
+    const students = this.data.taskStudents.filter(item => item.status === 'pending' || item.status === 'incomplete' || item.status === 'not_submitted')
+    if (!taskID || !students.length || this.data.submitting) {
+      this.showToast(students.length ? '当前没有可批量处理的学生' : '当前作业已经全部处理')
+      return
+    }
+    const submit = async () => {
+      this.setData({ submitting: true })
+      try {
+        const result = await bulkReviewHomeworkStudents(taskID, students.map(item => ({ student_id: item.student_id, status, correction_note: item.correction_note })))
+        this.setData({ taskStudents: result.items.map(item => this.toTaskStudentView(item)) })
+        this.showToast(`已批量处理 ${result.total} 名学生`)
+      }
+      catch (error) {
+        this.showToast(error instanceof Error ? error.message : '批量批改失败')
+      }
+      finally {
+        this.setData({ submitting: false })
+      }
+    }
+    if (typeof wx === 'undefined') {
+      await submit()
+      return
+    }
+    wx.showModal({
+      title: status === 'completed' ? '批量标记完成' : status === 'incomplete' ? '批量标记订正' : '批量标记未交',
+      content: `将处理当前未完成的 ${students.length} 名学生，是否继续？`,
+      success: (result) => {
+        if (result.confirm) {
+          void submit()
+        }
+      },
+    })
+  },
+  handleBulkComplete() {
+    void this.bulkReview('completed')
+  },
+  handleBulkIncomplete() {
+    void this.bulkReview('incomplete')
   },
   async reviewStudent(event: WechatMiniprogram.TouchEvent) {
     const taskID = this.data.selectedTaskID

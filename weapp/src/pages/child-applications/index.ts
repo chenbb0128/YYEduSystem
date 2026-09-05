@@ -187,6 +187,9 @@ Page({
   },
   async handleNeedsInfo(event: WechatMiniprogram.TouchEvent) {
     const applicationID = Number(event.currentTarget.dataset.applicationId)
+    await this.requestNeedsInfo(applicationID)
+  },
+  async requestNeedsInfo(applicationID: number) {
     const note = await this.promptNote('请填写需要家长补充的内容')
     if (note === null) {
       return
@@ -195,11 +198,31 @@ Page({
   },
   async handleReject(event: WechatMiniprogram.TouchEvent) {
     const applicationID = Number(event.currentTarget.dataset.applicationId)
+    await this.requestReject(applicationID)
+  },
+  async requestReject(applicationID: number) {
     const note = await this.promptNote('请填写未通过原因')
     if (note === null) {
       return
     }
     await this.runReview(applicationID, { status: 'rejected', review_note: note }, '申请已拒绝')
+  },
+  handleMoreActions(event: WechatMiniprogram.TouchEvent) {
+    const applicationID = Number(event.currentTarget.dataset.applicationId)
+    if (!applicationID || typeof wx === 'undefined') {
+      return
+    }
+    wx.showActionSheet({
+      itemList: ['要求补充资料', '不通过'],
+      success: (result) => {
+        if (result.tapIndex === 0) {
+          void this.requestNeedsInfo(applicationID)
+        }
+        else if (result.tapIndex === 1) {
+          void this.requestReject(applicationID)
+        }
+      },
+    })
   },
   promptNote(placeholderText: string): Promise<string | null> {
     return new Promise((resolve) => {

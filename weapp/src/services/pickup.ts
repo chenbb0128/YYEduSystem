@@ -103,6 +103,8 @@ export interface PickupCloseCheck {
   can_finish: boolean
   pending: PickupOperationStudent[]
   exceptions: Array<{ kind: string, operation_id: number, student_id?: number, student_name?: string, message: string }>
+  blockers?: Array<{ kind: string, operation_id: number, student_id?: number, student_name?: string, message: string }>
+  warnings?: Array<{ kind: string, operation_id: number, student_id?: number, student_name?: string, message: string }>
   pending_photo_count: number
   profile_pending_count: number
 }
@@ -122,6 +124,11 @@ export interface PickupChangeRequest {
   reviewed_at?: string
   review_note: string
   created_at: string
+}
+
+export interface BatchNotificationResult {
+  items: Array<{ id: number, student_id: number, status: string }>
+  total: number
 }
 
 interface ApiEnvelope<T> {
@@ -152,6 +159,10 @@ export function getToday() {
 
 export async function getPickupOperations(date = getToday()) {
   return pickupRequest<PageResult<PickupOperation>>(`/pickup-operations?date=${date}`)
+}
+
+export async function createBatchNotification(data: { student_ids: number[], title: string, content: string, kind?: 'teacher_notice' | 'pickup_reminder' | 'homework_reminder' | 'meal_reminder' }) {
+  return pickupRequest<BatchNotificationResult>('/notifications/batch', 'POST', data)
 }
 
 export async function getPickupWorkbench(date = getToday()) {
@@ -220,6 +231,16 @@ export async function finishPickupOperation(operationId: number) {
 
 export async function markPickupStudent(operationId: number, studentId: number, status: Exclude<PickupMemberStatus, 'planned'>, photoUrl = '', note = '') {
   return pickupRequest<PickupOperationStudent>(`/pickup-operations/${operationId}/students/${studentId}/status`, 'POST', { status, photo_url: photoUrl, operator_name: '老师', note })
+}
+
+/**
+ * Batch arrival is intentionally narrower than the single-student action.
+ * School-gate pickup still has to be recorded one child at a time with a
+ * photo; this endpoint only confirms that already collected children arrived
+ * at the care class together.
+ */
+export async function bulkArrivePickupStudents(operationId: number, studentIds: number[], note = '') {
+  return pickupRequest<{ items: PickupOperationStudent[], total: number }>(`/pickup-operations/${operationId}/students/bulk-arrive`, 'POST', { student_ids: studentIds, note })
 }
 
 export async function addTemporaryPickupStudent(operationId: number, data: { name: string, guardian_phone?: string, gender?: string, student_no?: string, pickup_mode?: string, note?: string }) {

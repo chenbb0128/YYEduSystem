@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -68,6 +69,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.SMS.Validate(env); err != nil {
+		return err
+	}
+	if err := c.OCR.Validate(env); err != nil {
 		return err
 	}
 	if err := c.Storage.Validate(env); err != nil {
@@ -176,6 +180,65 @@ func (c SMSConfig) Validate(env string) error {
 	}
 	if (env == "prod" || env == "production") && strings.TrimSpace(c.CodeSecret) == "" {
 		return fmt.Errorf("config sms.code_secret is required in production when sms is enabled")
+	}
+	return nil
+}
+
+func (c OCRConfig) Validate(env string) error {
+	provider := strings.ToLower(strings.TrimSpace(c.Provider))
+	if provider == "" {
+		provider = "rapidocr"
+	}
+	switch provider {
+	case "rapidocr", "tencent":
+	default:
+		return fmt.Errorf("config ocr.provider must be rapidocr or tencent")
+	}
+	if !c.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(c.Endpoint) == "" {
+		return fmt.Errorf("config ocr.endpoint is required when ocr.enabled is true")
+	}
+	endpoint, err := url.Parse(strings.TrimSpace(c.Endpoint))
+	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
+		return fmt.Errorf("config ocr.endpoint must be a valid URL")
+	}
+	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
+		return fmt.Errorf("config ocr.endpoint must use http or https")
+	}
+	if provider == "tencent" {
+		for field, value := range map[string]string{
+			"ocr.secret_id":  c.SecretID,
+			"ocr.secret_key": c.SecretKey,
+			"ocr.region":     c.Region,
+			"ocr.action":     c.Action,
+		} {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("config %s is required when ocr.provider is tencent", field)
+			}
+		}
+		if endpoint.Scheme != "https" {
+			return fmt.Errorf("config ocr.endpoint must use https when ocr.provider is tencent")
+		}
+	}
+	if err := positiveDuration("ocr.timeout", c.Timeout); err != nil {
+		return err
+	}
+	if c.MaxImageBytes <= 0 {
+		return fmt.Errorf("config ocr.max_image_bytes must be positive")
+	}
+	if provider == "tencent" {
+		switch strings.TrimSpace(c.Action) {
+		case "GeneralHandwritingOCR":
+		default:
+			return fmt.Errorf("config ocr.action currently supports GeneralHandwritingOCR for tencent")
+		}
+	}
+	if env == "prod" || env == "production" {
+		if provider == "tencent" && (isPlaceholder(c.SecretID) || isPlaceholder(c.SecretKey)) {
+			return fmt.Errorf("config ocr credentials must be real values in production")
+		}
 	}
 	return nil
 }

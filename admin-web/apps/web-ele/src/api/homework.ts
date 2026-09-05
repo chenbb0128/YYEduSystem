@@ -82,9 +82,7 @@ export function uploadHomeworkPhotoApi(
     sha256?: string;
     size: number;
     url: string;
-  }>('/uploads/homework', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  }>('/uploads/homework', formData);
 }
 
 export function getHomeworkTaskStudentsApi(taskId: number) {

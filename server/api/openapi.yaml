@@ -792,6 +792,37 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/v1/students/import:
+    post:
+      tags: [MasterData]
+      summary: 批量导入学生档案
+      description: 接收已由管理端解析的学生档案列表；服务端自动归类学校、年级、班级和托管班，重复学生跳过并返回原始行号。有效记录一次性写入，MySQL 使用事务。
+      operationId: importStudents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    $ref: '#/components/schemas/StudentProfileRequest'
+      responses:
+        '200':
+          description: 导入完成，可能同时返回重复和无效行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentImportResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /api/v1/students/{id}:
     put:
       tags: [MasterData]
@@ -944,6 +975,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HomeworkTaskStudentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/homework-tasks/{id}/students/bulk-review:
+    post:
+      tags: [Homework]
+      summary: 批量批改学生作业
+      description: 先校验整批学生都属于该作业，再一次性保存反馈；任一学生不存在时整批失败。
+      operationId: bulkReviewHomeworkStudents
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HomeworkBulkReviewRequest'
+      responses:
+        '200':
+          description: 批量批改结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkTaskStudentListResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
@@ -1449,6 +1509,34 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/v1/pickup-operations/{id}/students/bulk-arrive:
+    post:
+      tags: [Pickup]
+      summary: 批量确认学生到班
+      description: 仅用于确认已经完成校门口接到或自行到班记录的学生到达托管班。校门口接到仍必须逐人拍照，不允许通过批量接口跳过照片要求。
+      operationId: bulkArrivePickupOperationStudents
+      parameters:
+        - $ref: '#/components/parameters/PickupOperationID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkArrivePickupStudentsRequest'
+      responses:
+        '200':
+          description: 批量到班确认成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickupOperationStudentListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /api/v1/pickup-change-requests:
     get:
       tags: [Pickup]
@@ -1521,6 +1609,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationListResponse'
+
+  /api/v1/notifications/batch:
+    post:
+      tags: [Notification]
+      summary: 批量通知家长
+      description: 教师只能通知自己负责班级的在托学生；每名学生生成一条站内通知并写入异步 outbox，消息发送失败不影响业务流程。
+      operationId: createBatchNotifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [student_ids, title, content]
+              additionalProperties: false
+              properties:
+                student_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+                  items: { type: integer, format: int64, minimum: 1 }
+                kind:
+                  type: string
+                  enum: [teacher_notice, pickup_reminder, homework_reminder, meal_reminder]
+                  default: teacher_notice
+                title: { type: string, minLength: 1, maxLength: 80 }
+                content: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: 通知已写入站内通知和异步发送队列
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchNotificationResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/notifications/delivery-logs:
     get:
@@ -1722,7 +1848,7 @@ paths:
     post:
       tags: [Parent]
       summary: 提交孩子入班申请
-      description: 家长可以通过教师邀请链接提交孩子姓名和联系方式；带有 school_class_id 时不需要填写学校和班级，申请必须经过教师或管理员审核。
+      description: 家长可以通过教师分享的小程序码提交孩子姓名；服务端验证 invite_token 后自动带入学校班级，申请必须经过教师或管理员审核。
       operationId: createParentChildApplication
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -1755,9 +1881,61 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChildApplicationListResponse'
+              $ref: '#/components/schemas/ChildApplicationListResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
+  /api/v1/parent/class-invites/{token}:
+    get:
+      tags: [Parent]
+      summary: 查询班级邀请信息
+      description: 家长扫码进入小程序后，用签名邀请标识查询班级展示信息；不会返回学生数据。
+      operationId: getParentClassInvite
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string, minLength: 4, maxLength: 64 }
+      responses:
+        '200':
+          description: 班级邀请信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassInviteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/class-invites/qrcode:
+    get:
+      tags: [Parent]
+      summary: 生成班级邀请小程序码
+      description: 教师只能为自己负责的班级生成官方微信小程序码，管理员可以生成全机构班级的小程序码。
+      operationId: getClassInviteQRCode
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: school_class_id
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: PNG 格式微信小程序码
+          content:
+            image/png: {}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
 
   /api/v1/parent/child-applications/{id}:
     put:
@@ -2103,6 +2281,13 @@ paths:
       description: 仅教职工 Token 可访问，用于管理端/老师工作台审核。
       operationId: listLeaveRequests
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, approved, rejected, cancelled] }
       responses:
         '200':
           description: 请假申请列表
@@ -2580,6 +2765,57 @@ paths:
       responses:
         '200': { description: 每日异常汇总, content: { application/json: { schema: { $ref: '#/components/schemas/DailyOverviewResponse' } } } }
 
+  /api/v1/reports/daily-exceptions:
+    get:
+      tags: [Reports]
+      summary: 查询每日可处理异常
+      description: 返回当前员工可见班级中的接送、作业、餐食、请假、入班申请和每日总结待办。
+      operationId: getDailyExceptions
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+        - in: query
+          name: include_acknowledged
+          description: 是否同时返回已经确认的异常记录
+          schema: { type: boolean, default: false }
+        - in: query
+          name: school_class_id
+          description: 只返回指定学校班级相关异常，供教师收班检查使用
+          schema: { type: integer, format: uint64, minimum: 1 }
+        - in: query
+          name: operation_id
+          description: 只过滤指定接送任务的接送异常；其他模块仍按班级返回
+          schema: { type: integer, format: uint64, minimum: 1 }
+      responses:
+        '200': { description: 每日可处理异常, content: { application/json: { schema: { $ref: '#/components/schemas/DailyExceptionsResponse' } } } }
+
+  /api/v1/reports/daily-exceptions/{id}/acknowledge:
+    post:
+      tags: [Reports]
+      summary: 确认已知每日异常
+      description: 教师或管理员确认一条自己有权限查看的异常，并保存可选的处理说明。
+      operationId: acknowledgeDailyException
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 200 }
+              additionalProperties: false
+      responses:
+        '200': { description: 异常已确认, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+
   /api/v1/parent/subscriptions:
     get:
       tags: [Parent]
@@ -3013,6 +3249,24 @@ components:
         correction_note: { type: string, maxLength: 500 }
       additionalProperties: false
 
+    HomeworkBulkReviewRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [student_id, status]
+            properties:
+              student_id: { type: integer, format: int64, minimum: 1 }
+              status: { type: string, enum: [completed, incomplete, not_submitted] }
+              correction_note: { type: string, maxLength: 500 }
+            additionalProperties: false
+      additionalProperties: false
+
     HomeworkTaskResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
@@ -3295,6 +3549,34 @@ components:
         - $ref: '#/components/schemas/SuccessResponse'
         - type: object
           properties: { data: { $ref: '#/components/schemas/PageData' } }
+    StudentImportIssue:
+      type: object
+      required: [row, reason]
+      properties:
+        row: { type: integer, format: int32, minimum: 2 }
+        name: { type: string }
+        field: { type: string }
+        reason: { type: string }
+      additionalProperties: false
+    StudentImportResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [created, skipped_duplicates, invalid]
+              properties:
+                created:
+                  type: array
+                  items: { $ref: '#/components/schemas/Student' }
+                skipped_duplicates:
+                  type: array
+                  items: { $ref: '#/components/schemas/StudentImportIssue' }
+                invalid:
+                  type: array
+                  items: { $ref: '#/components/schemas/StudentImportIssue' }
+              additionalProperties: false
 
     ParentAccount:
       type: object
@@ -3346,12 +3628,13 @@ components:
 
     ChildApplicationCreateRequest:
       type: object
-      required: [student_name, guardian_phone]
+      required: [student_name]
       properties:
         student_name: { type: string, minLength: 1, maxLength: 64 }
-        school_name: { type: string, maxLength: 128, description: 未通过教师邀请链接时填写。 }
-        class_text: { type: string, maxLength: 64, description: 例如一年级2班或一（2）班。 }
-        school_class_id: { type: integer, format: int64, minimum: 1, description: 教师邀请链接带入的学校班级 ID。 }
+        invite_token: { type: string, maxLength: 64, description: 教师小程序码带入的签名班级邀请标识。 }
+        school_name: { type: string, maxLength: 128, description: 未通过教师小程序码时的兼容字段。 }
+        class_text: { type: string, maxLength: 64, description: 兼容旧流程，例如一年级2班或一（2）班。 }
+        school_class_id: { type: integer, format: int64, minimum: 1, description: 兼容旧邀请链接的学校班级 ID。 }
         guardian_name: { type: string, maxLength: 64 }
         guardian_phone: { type: string, minLength: 1, maxLength: 32 }
         relationship: { type: string, maxLength: 32, default: 家长 }
@@ -3367,6 +3650,25 @@ components:
         student_id: { type: integer, format: int64, minimum: 1, description: 班级内存在同名学生时指定要匹配的学生档案。 }
         review_note: { type: string, maxLength: 500 }
       additionalProperties: false
+
+    ClassInvite:
+      type: object
+      required: [token, school_class_id, school_name, grade, class_name, label]
+      properties:
+        token: { type: string }
+        school_class_id: { type: integer, format: int64 }
+        school_name: { type: string }
+        grade: { type: string }
+        class_name: { type: string }
+        label: { type: string }
+      additionalProperties: false
+
+    ClassInviteResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/ClassInvite' }
 
     ChildApplicationResponse:
       allOf:
@@ -3494,6 +3796,8 @@ components:
       properties:
         id: { type: integer, format: int64 }
         student_id: { type: integer, format: int64 }
+        student_name: { type: string }
+        class_name: { type: string }
         parent_account_id: { type: integer, format: int64, nullable: true }
         submitted_by_type: { type: string, enum: [parent, teacher] }
         leave_date: { type: string, format: date }
@@ -3762,6 +4066,18 @@ components:
           type: string
           description: 照片 URL；status 为 picked_up 时必填。
         operator_name: { type: string, maxLength: 64 }
+        note: { type: string, maxLength: 500 }
+      additionalProperties: false
+
+    BulkArrivePickupStudentsRequest:
+      type: object
+      required: [student_ids]
+      properties:
+        student_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: integer, format: int64, minimum: 1 }
         note: { type: string, maxLength: 500 }
       additionalProperties: false
 
@@ -4050,6 +4366,40 @@ components:
                 anomalies: { type: array, items: { type: object, additionalProperties: true } }
                 classes: { type: array, items: { type: object, additionalProperties: true } }
 
+    DailyExceptionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [date, items, counts]
+              properties:
+                date: { type: string, format: date }
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, code, category, severity, label, message, action]
+                    properties:
+                      id: { type: string }
+                      code: { type: string }
+                      category: { type: string, enum: [pickup, student, homework, meal, leave, application, summary] }
+                      severity: { type: string, enum: [warning, danger] }
+                      label: { type: string }
+                      message: { type: string }
+                      school_class_id: { type: integer, format: int64, nullable: true }
+                      class_name: { type: string }
+                      student_id: { type: integer, format: int64, nullable: true }
+                      student_name: { type: string }
+                      operation_id: { type: integer, format: int64, nullable: true }
+                      task_id: { type: integer, format: int64, nullable: true }
+                      action: { type: string }
+                      acknowledged: { type: boolean }
+                      acknowledged_at: { type: string, format: date-time }
+                      acknowledged_by: { type: string }
+                counts: { type: object, additionalProperties: { type: integer, format: int32 } }
+
     MessageSubscription:
       type: object
       required: [kind, status, updated_at]
@@ -4288,12 +4638,14 @@ components:
 
     PickupCloseCheck:
       type: object
-      required: [operation_id, can_finish, pending, exceptions, pending_photo_count, profile_pending_count]
+      required: [operation_id, can_finish, pending, exceptions, blockers, warnings, pending_photo_count, profile_pending_count]
       properties:
         operation_id: { type: integer, format: int64 }
         can_finish: { type: boolean }
         pending: { type: array, items: { $ref: '#/components/schemas/PickupOperationStudent' } }
         exceptions: { type: array, items: { type: object } }
+        blockers: { type: array, items: { type: object } }
+        warnings: { type: array, items: { type: object } }
         pending_photo_count: { type: integer, format: int32 }
         profile_pending_count: { type: integer, format: int32 }
       additionalProperties: false
@@ -4362,6 +4714,26 @@ components:
                 items:
                   type: array
                   items: { $ref: '#/components/schemas/Notification' }
+                total: { type: integer, format: int32 }
+              additionalProperties: false
+    BatchNotificationItem:
+      type: object
+      required: [id, student_id, status]
+      properties:
+        id: { type: integer, format: int64 }
+        student_id: { type: integer, format: int64 }
+        status: { type: string, enum: [pending] }
+      additionalProperties: false
+    BatchNotificationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [items, total]
+              properties:
+                items: { type: array, items: { $ref: '#/components/schemas/BatchNotificationItem' } }
                 total: { type: integer, format: int32 }
               additionalProperties: false
     NotificationDeliveryLog:

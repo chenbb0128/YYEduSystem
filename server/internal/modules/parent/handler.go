@@ -2,8 +2,12 @@ package parent
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,8 +20,10 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/verification"
+	wechat "github.com/chenbb0128/tuoguan-system-server/internal/platform/wechat"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
 )
@@ -41,6 +47,10 @@ type Handler struct {
 	audit               auditmodule.Writer
 	photoSigner         *storage.URLSigner
 	photoURLTTL         time.Duration
+	miniProgramCode     MiniProgramCodeGenerator
+	miniProgramPage     string
+	miniProgramEnv      string
+	classInviteSecret   string
 	orgID               uint64
 }
 
@@ -48,12 +58,16 @@ type CodeExchanger interface {
 	ExchangeCode(context.Context, string) (string, error)
 }
 
+type MiniProgramCodeGenerator interface {
+	GenerateMiniProgramCode(context.Context, wechat.MiniProgramCodeParams) ([]byte, error)
+}
+
 func NewHandler(store Store, masterData masterdata.Store, pickupStore pickup.Store, tokens ...*identity.TokenManager) *Handler {
 	var tokenManager *identity.TokenManager
 	if len(tokens) > 0 {
 		tokenManager = tokens[0]
 	}
-	return &Handler{store: store, masterData: masterData, pickup: pickupStore, tokens: tokenManager, allowLocalCode: true, allowLocalPhoneCode: true, photoURLTTL: 15 * time.Minute, orgID: masterdata.DefaultOrganizationID}
+	return &Handler{store: store, masterData: masterData, pickup: pickupStore, tokens: tokenManager, allowLocalCode: true, allowLocalPhoneCode: true, photoURLTTL: 15 * time.Minute, miniProgramPage: "pages/parent/index", miniProgramEnv: "release", classInviteSecret: "tuoguan-system-local-class-invite-secret", orgID: masterdata.DefaultOrganizationID}
 }
 
 func (h *Handler) SetCodeExchanger(exchanger CodeExchanger) { h.exchanger = exchanger }
@@ -66,6 +80,25 @@ func (h *Handler) SetAllowLocalCode(allow bool) { h.allowLocalCode = allow }
 func (h *Handler) SetAllowLocalPhoneCode(allow bool) { h.allowLocalPhoneCode = allow }
 
 func (h *Handler) SetPhoneCodeService(service *verification.Service) { h.phoneCodeService = service }
+
+func (h *Handler) SetMiniProgramCodeGenerator(generator MiniProgramCodeGenerator) {
+	h.miniProgramCode = generator
+}
+
+func (h *Handler) SetMiniProgramCodeConfig(page, envVersion string) {
+	if strings.TrimSpace(page) != "" {
+		h.miniProgramPage = strings.TrimPrefix(strings.TrimSpace(page), "/")
+	}
+	if strings.TrimSpace(envVersion) != "" {
+		h.miniProgramEnv = strings.TrimSpace(envVersion)
+	}
+}
+
+func (h *Handler) SetClassInviteSecret(secret string) {
+	if strings.TrimSpace(secret) != "" {
+		h.classInviteSecret = strings.TrimSpace(secret)
+	}
+}
 
 func (h *Handler) SetStaffScope(assignments assignment.Store) { h.assignments = assignments }
 
@@ -102,6 +135,7 @@ func (h *Handler) RegisterParentRoutes(api *gin.RouterGroup) {
 	api.POST("/parent/child-applications", h.createChildApplication)
 	api.GET("/parent/child-applications", h.listParentChildApplications)
 	api.PUT("/parent/child-applications/:id", h.updateChildApplication)
+	api.GET("/parent/class-invites/:token", h.getClassInvite)
 	api.GET("/parent/me", h.getMe)
 	api.GET("/parent/students", h.listStudents)
 	api.GET("/parent/students/:student_id/pickup-events", h.listStudentPickupEvents)
@@ -122,9 +156,129 @@ func (h *Handler) RegisterParentRoutes(api *gin.RouterGroup) {
 func (h *Handler) RegisterStaffRoutes(api *gin.RouterGroup) {
 	api.GET("/child-applications", h.listStaffChildApplications)
 	api.POST("/child-applications/:id/review", h.reviewChildApplication)
+	api.GET("/class-invites/qrcode", h.getClassInviteQRCode)
 	api.GET("/leave-requests", h.listAllLeaveRequests)
 	api.POST("/leave-requests/teacher", h.createTeacherLeaveRequest)
 	api.POST("/leave-requests/:id/review", h.reviewLeaveRequest)
+}
+
+type classInviteView struct {
+	Token         string `json:"token"`
+	SchoolClassID uint64 `json:"school_class_id"`
+	SchoolName    string `json:"school_name"`
+	Grade         string `json:"grade"`
+	ClassName     string `json:"class_name"`
+	Label         string `json:"label"`
+}
+
+func (h *Handler) getClassInviteQRCode(c *gin.Context) {
+	principal, ok := identity.PrincipalFromContext(c.Request.Context())
+	if !ok || principal.Kind != identity.PrincipalKindUser {
+		response.Error(c, response.Unauthorized())
+		return
+	}
+	schoolClassID, err := strconv.ParseUint(strings.TrimSpace(c.Query("school_class_id")), 10, 64)
+	if err != nil || schoolClassID == 0 {
+		response.Error(c, response.BadRequest("school_class_id 不合法", err))
+		return
+	}
+	if !h.teacherHasClassAccess(c, principal, schoolClassID) {
+		response.Error(c, response.Forbidden())
+		return
+	}
+	if h.miniProgramCode == nil {
+		response.Error(c, response.DependencyUnavailable(errors.New("wechat mini-program code generator is not configured")))
+		return
+	}
+	if _, err := h.classInviteDetails(c, schoolClassID); err != nil {
+		h.respondMasterError(c, err)
+		return
+	}
+	image, err := h.miniProgramCode.GenerateMiniProgramCode(c.Request.Context(), wechat.MiniProgramCodeParams{Scene: h.classInviteToken(identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), schoolClassID), Page: h.miniProgramPage, EnvVersion: h.miniProgramEnv, Width: 430})
+	if err != nil {
+		response.Error(c, response.DependencyUnavailable(err))
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Data(http.StatusOK, "image/png", image)
+}
+
+func (h *Handler) getClassInvite(c *gin.Context) {
+	token := strings.TrimSpace(c.Param("token"))
+	schoolClassID, err := h.schoolClassIDFromInviteToken(c, token)
+	if err != nil {
+		response.Error(c, response.BadRequest("班级邀请二维码无效或已失效", err))
+		return
+	}
+	view, err := h.classInviteDetails(c, schoolClassID)
+	if err != nil {
+		h.respondMasterError(c, err)
+		return
+	}
+	view.Token = token
+	response.OK(c, view)
+}
+
+func (h *Handler) classInviteDetails(c *gin.Context, schoolClassID uint64) (classInviteView, error) {
+	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), orgID)
+	if err != nil {
+		return classInviteView{}, err
+	}
+	var schoolClass masterdata.SchoolClass
+	for _, item := range classes {
+		if item.ID == schoolClassID && item.Status == "active" {
+			schoolClass = item
+			break
+		}
+	}
+	if schoolClass.ID == 0 {
+		return classInviteView{}, masterdata.ErrNotFound
+	}
+	schoolName := ""
+	schools, err := h.masterData.ListSchools(c.Request.Context(), orgID)
+	if err != nil {
+		return classInviteView{}, err
+	}
+	for _, school := range schools {
+		if school.ID == schoolClass.SchoolID {
+			schoolName = school.Name
+			break
+		}
+	}
+	return classInviteView{SchoolClassID: schoolClass.ID, SchoolName: schoolName, Grade: schoolClass.Grade, ClassName: schoolClass.Name, Label: strings.TrimSpace(schoolName + " · " + schoolClass.Grade + schoolClass.Name)}, nil
+}
+
+func (h *Handler) classInviteToken(orgID, schoolClassID uint64) string {
+	encodedID := strconv.FormatUint(schoolClassID, 36)
+	return "c" + encodedID + "." + h.classInviteSignature(orgID, encodedID)
+}
+
+func (h *Handler) classInviteSignature(orgID uint64, encodedID string) string {
+	secret := strings.TrimSpace(h.classInviteSecret)
+	if secret == "" {
+		secret = "tuoguan-system-local-class-invite-secret"
+	}
+	organizationID := strconv.FormatUint(orgID, 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(organizationID + ":" + encodedID))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:6])
+}
+
+func (h *Handler) schoolClassIDFromInviteToken(c *gin.Context, token string) (uint64, error) {
+	if len(token) < 4 || token[0] != 'c' {
+		return 0, errInvalidClassInviteToken
+	}
+	parts := strings.SplitN(token[1:], ".", 2)
+	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	if len(parts) != 2 || parts[0] == "" || !hmac.Equal([]byte(parts[1]), []byte(h.classInviteSignature(orgID, parts[0]))) {
+		return 0, errInvalidClassInviteToken
+	}
+	schoolClassID, err := strconv.ParseUint(parts[0], 36, 64)
+	if err != nil || schoolClassID == 0 {
+		return 0, errInvalidClassInviteToken
+	}
+	return schoolClassID, nil
 }
 
 type accountView struct {
@@ -180,6 +334,8 @@ type studentMatchView struct {
 type leaveRequestView struct {
 	ID              uint64  `json:"id"`
 	StudentID       uint64  `json:"student_id"`
+	StudentName     string  `json:"student_name,omitempty"`
+	ClassName       string  `json:"class_name,omitempty"`
 	ParentAccountID *uint64 `json:"parent_account_id,omitempty"`
 	SubmittedByType string  `json:"submitted_by_type"`
 	LeaveDate       string  `json:"leave_date"`
@@ -312,6 +468,7 @@ type bindStudentRequest struct {
 
 type childApplicationRequest struct {
 	StudentName   string `json:"student_name"`
+	InviteToken   string `json:"invite_token"`
 	SchoolName    string `json:"school_name"`
 	Grade         string `json:"grade"`
 	ClassName     string `json:"class_name"`
@@ -323,15 +480,14 @@ type childApplicationRequest struct {
 	Notes         string `json:"notes"`
 }
 
+var errInvalidClassInviteToken = errors.New("parent: class invite token is invalid")
+
 func (r childApplicationRequest) Validate() []response.ValidationDetail {
-	details := make([]response.ValidationDetail, 0, 4)
+	details := make([]response.ValidationDetail, 0, 3)
 	if strings.TrimSpace(r.StudentName) == "" {
 		details = append(details, response.ValidationDetail{Field: "student_name", Reason: "required"})
 	}
-	if strings.TrimSpace(r.GuardianPhone) == "" {
-		details = append(details, response.ValidationDetail{Field: "guardian_phone", Reason: "required"})
-	}
-	if r.SchoolClassID == 0 && strings.TrimSpace(r.Grade) == "" && strings.TrimSpace(r.ClassText) == "" {
+	if strings.TrimSpace(r.InviteToken) == "" && r.SchoolClassID == 0 && strings.TrimSpace(r.Grade) == "" && strings.TrimSpace(r.ClassText) == "" {
 		details = append(details, response.ValidationDetail{Field: "grade", Reason: "required"})
 	}
 	return details
@@ -746,6 +902,15 @@ func (h *Handler) createChildApplication(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
+	if strings.TrimSpace(req.InviteToken) != "" {
+		classID, inviteErr := h.schoolClassIDFromInviteToken(c, strings.TrimSpace(req.InviteToken))
+		if inviteErr != nil {
+			response.Error(c, response.BadRequest("班级邀请二维码无效或已失效", inviteErr))
+			return
+		}
+		req.SchoolClassID = classID
+		req.SchoolName, req.Grade, req.ClassName, req.ClassText = "", "", "", ""
+	}
 	schoolID, schoolClassID, grade, className, err := h.resolveChildApplicationClass(c, req)
 	if err != nil {
 		h.respondMasterError(c, err)
@@ -814,6 +979,15 @@ func (h *Handler) updateChildApplication(c *gin.Context) {
 	if err := request.BindJSON(c, &req); err != nil {
 		response.Error(c, err)
 		return
+	}
+	if strings.TrimSpace(req.InviteToken) != "" {
+		classID, inviteErr := h.schoolClassIDFromInviteToken(c, strings.TrimSpace(req.InviteToken))
+		if inviteErr != nil {
+			response.Error(c, response.BadRequest("班级邀请二维码无效或已失效", inviteErr))
+			return
+		}
+		req.SchoolClassID = classID
+		req.SchoolName, req.Grade, req.ClassName, req.ClassText = "", "", "", ""
 	}
 	if req.SchoolClassID == 0 && application.SchoolClassID != nil && strings.TrimSpace(req.SchoolName) == "" && strings.TrimSpace(req.ClassText) == "" {
 		req.SchoolClassID = *application.SchoolClassID
@@ -1451,7 +1625,7 @@ func (h *Handler) getStudentPickupToday(c *gin.Context) {
 	}
 	dateValue := strings.TrimSpace(c.Query("date"))
 	if dateValue == "" {
-		dateValue = time.Now().UTC().Format("2006-01-02")
+		dateValue = businessdate.TodayString(time.Now())
 	}
 	date, err := parseDate(dateValue)
 	if err != nil {
@@ -1933,6 +2107,40 @@ func (h *Handler) listAllLeaveRequests(c *gin.Context) {
 		h.respondStoreError(c, err)
 		return
 	}
+	if value := strings.TrimSpace(c.Query("date")); value != "" {
+		date, parseErr := parseDate(value)
+		if parseErr != nil {
+			response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "date", Reason: "date_format"}}))
+			return
+		}
+		filtered := make([]LeaveRequest, 0, len(items))
+		for _, item := range items {
+			if sameDay(item.LeaveDate, date) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+	if status := strings.TrimSpace(c.Query("status")); status != "" {
+		switch status {
+		case LeaveStatusPending, LeaveStatusApproved, LeaveStatusRejected, LeaveStatusCancelled:
+		default:
+			response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "status", Reason: "invalid_value"}}))
+			return
+		}
+		filtered := make([]LeaveRequest, 0, len(items))
+		for _, item := range items {
+			if item.Status == status {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+	items, err = h.filterStaffLeaveRequests(c, items)
+	if err != nil {
+		response.Error(c, response.Internal(err))
+		return
+	}
 	h.writeLeaveRequests(c, items)
 }
 
@@ -1942,6 +2150,27 @@ func (h *Handler) reviewLeaveRequest(c *gin.Context) {
 	}
 	id, ok := parsePathValue(c, "id")
 	if !ok {
+		return
+	}
+	requests, err := h.store.ListLeaveRequests(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), nil)
+	if err != nil {
+		h.respondStoreError(c, err)
+		return
+	}
+	var target *LeaveRequest
+	for index := range requests {
+		if requests[index].ID == id {
+			target = &requests[index]
+			break
+		}
+	}
+	if target == nil {
+		response.Error(c, response.NotFound())
+		return
+	}
+	if !h.staffLeaveAllowed(c, *target) {
+		// Do not disclose a leave request belonging to another teacher's class.
+		response.Error(c, response.NotFound())
 		return
 	}
 	var req reviewLeaveRequest
@@ -1957,6 +2186,47 @@ func (h *Handler) reviewLeaveRequest(c *gin.Context) {
 	_ = h.notifyLeaveStatus(c, item)
 	h.recordAudit(c, "leave_request.review", "leave_request", item.ID)
 	response.OK(c, toLeaveRequestView(item))
+}
+
+func (h *Handler) filterStaffLeaveRequests(c *gin.Context, items []LeaveRequest) ([]LeaveRequest, error) {
+	principal, ok := identity.PrincipalFromContext(c.Request.Context())
+	if !ok || principal.Kind != identity.PrincipalKindUser || principal.Role != identity.UserRoleTeacher {
+		return items, nil
+	}
+	filtered := make([]LeaveRequest, 0, len(items))
+	for _, item := range items {
+		allowed, err := h.staffLeaveAllowedWithError(c, item)
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (h *Handler) staffLeaveAllowed(c *gin.Context, item LeaveRequest) bool {
+	allowed, _ := h.staffLeaveAllowedWithError(c, item)
+	return allowed
+}
+
+func (h *Handler) staffLeaveAllowedWithError(c *gin.Context, item LeaveRequest) (bool, error) {
+	principal, ok := identity.PrincipalFromContext(c.Request.Context())
+	if !ok || principal.Kind != identity.PrincipalKindUser || principal.Role != identity.UserRoleTeacher {
+		return true, nil
+	}
+	if h.masterData == nil || h.assignments == nil {
+		return false, errors.New("教师请假权限未配置")
+	}
+	student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), item.StudentID)
+	if err != nil {
+		if errors.Is(err, masterdata.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return h.teacherHasClassAccess(c, principal, student.SchoolClassID), nil
 }
 
 func (h *Handler) accountForOpenID(c *gin.Context, openID, nickname, avatar string) (Account, error) {
@@ -2118,8 +2388,23 @@ func (h *Handler) schoolClassDisplay(c *gin.Context, schoolClassID uint64) schoo
 
 func (h *Handler) writeLeaveRequests(c *gin.Context, items []LeaveRequest) {
 	out := make([]leaveRequestView, 0, len(items))
+	classNames := map[uint64]string{}
+	if h.masterData != nil {
+		if classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)); err == nil {
+			for _, schoolClass := range classes {
+				classNames[schoolClass.ID] = strings.TrimSpace(schoolClass.Grade + schoolClass.Name)
+			}
+		}
+	}
 	for _, item := range items {
-		out = append(out, toLeaveRequestView(item))
+		view := toLeaveRequestView(item)
+		if h.masterData != nil {
+			if student, err := h.masterData.FindStudent(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), item.StudentID); err == nil {
+				view.StudentName = student.Name
+				view.ClassName = classNames[student.SchoolClassID]
+			}
+		}
+		out = append(out, view)
 	}
 	response.OK(c, listResponse[leaveRequestView]{Items: out, Total: len(out)})
 }

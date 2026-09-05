@@ -71,6 +71,21 @@ const reviewForm = reactive<{
   student_id: undefined,
 });
 
+function safeItems<T>(page?: null | { items?: null | T[] }) {
+  return Array.isArray(page?.items) ? page.items : [];
+}
+
+function normalizeApplication(
+  application: ChildApplicationRecord,
+): ChildApplicationRecord {
+  return {
+    ...application,
+    student_matches: Array.isArray(application.student_matches)
+      ? application.student_matches
+      : [],
+  };
+}
+
 const currentRole = computed(() => userStore.userInfo?.roles?.[0] || '');
 const activeSchoolClasses = computed(() => {
   const active = schoolClasses.value.filter((item) => item.status === 'active');
@@ -204,16 +219,18 @@ async function loadData() {
     ]);
 
   if (applicationResult.status === 'fulfilled') {
-    applications.value = applicationResult.value.items;
+    applications.value = safeItems(applicationResult.value).map((item) =>
+      normalizeApplication(item),
+    );
   } else {
     applications.value = [];
     loadError.value = '家长入班申请加载失败，请稍后重试。';
   }
   if (classResult.status === 'fulfilled') {
-    schoolClasses.value = classResult.value.items;
+    schoolClasses.value = safeItems(classResult.value);
   }
   if (assignmentResult.status === 'fulfilled') {
-    assignments.value = assignmentResult.value.items;
+    assignments.value = safeItems(assignmentResult.value);
   }
   loading.value = false;
 }
@@ -235,8 +252,11 @@ function closeReview() {
 
 async function refreshApplicationBeforeReview(applicationID: number) {
   const latestPage = await getChildApplicationsApi();
-  applications.value = latestPage.items;
-  return latestPage.items.find((item) => item.id === applicationID);
+  const latestApplications = safeItems(latestPage).map((item) =>
+    normalizeApplication(item),
+  );
+  applications.value = latestApplications;
+  return latestApplications.find((item) => item.id === applicationID);
 }
 
 function isNotFoundError(error: unknown) {

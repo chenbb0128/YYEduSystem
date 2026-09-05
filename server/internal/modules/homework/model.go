@@ -70,3 +70,15 @@ type ReviewStudentParams struct {
 	CorrectionNote   string
 	ReviewedByUserID *uint64
 }
+
+type BulkReviewItem struct {
+	StudentID      uint64
+	Status         string
+	CorrectionNote string
+}
+
+type BulkReviewStudentsParams struct {
+	TaskID           uint64
+	Items            []BulkReviewItem
+	ReviewedByUserID *uint64
+}

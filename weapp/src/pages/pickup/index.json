@@ -1,3 +1,5 @@
 {
-  "navigationBarTitleText": "今日接送"
+  "navigationBarTitleText": "教师今日工作台",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#F9F5E8"
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	mediamodule "github.com/chenbb0128/tuoguan-system-server/internal/modules/media"
+	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/request"
 	"github.com/chenbb0128/tuoguan-system-server/internal/transport/httpapi/response"
@@ -88,11 +89,13 @@ func (h *Handler) RegisterRoutes(api *gin.RouterGroup) {
 	api.POST("/pickup-operations/:id/start", h.startOperation)
 	api.POST("/pickup-operations/:id/finish", h.finishOperation)
 	api.POST("/pickup-operations/:id/students/:student_id/status", h.markOperationStudent)
+	api.POST("/pickup-operations/:id/students/bulk-arrive", h.bulkArriveOperationStudents)
 	api.POST("/pickup-operations/:id/students/:student_id/profile", h.completeOperationStudentProfile)
 	api.POST("/pickup-operations/:id/students", h.addOperationStudent)
 	api.GET("/pickup-change-requests", h.listChangeRequests)
 	api.POST("/pickup-change-requests/:id/review", h.reviewChangeRequest)
 	api.GET("/notifications", h.listNotifications)
+	api.POST("/notifications/batch", h.createBatchNotifications)
 	api.POST("/notifications/:id/read", h.markNotificationRead)
 	api.GET("/notifications/delivery-logs", h.listNotificationDeliveryLogs)
 	api.POST("/notifications/:id/retry", h.retryNotification)
@@ -209,6 +212,54 @@ type notificationDeliveryLogView struct {
 	UpdatedAt          string  `json:"updated_at"`
 }
 
+type batchNotificationRequest struct {
+	StudentIDs []uint64 `json:"student_ids"`
+	Kind       string   `json:"kind"`
+	Title      string   `json:"title"`
+	Content    string   `json:"content"`
+}
+
+func (r batchNotificationRequest) Validate() []response.ValidationDetail {
+	details := make([]response.ValidationDetail, 0, 4)
+	if len(r.StudentIDs) == 0 {
+		details = append(details, response.ValidationDetail{Field: "student_ids", Reason: "required"})
+	} else if len(r.StudentIDs) > 100 {
+		details = append(details, response.ValidationDetail{Field: "student_ids", Reason: "too_many"})
+	}
+	seen := make(map[uint64]struct{}, len(r.StudentIDs))
+	for _, id := range r.StudentIDs {
+		if id == 0 {
+			details = append(details, response.ValidationDetail{Field: "student_ids", Reason: "invalid_value"})
+			break
+		}
+		if _, exists := seen[id]; exists {
+			details = append(details, response.ValidationDetail{Field: "student_ids", Reason: "duplicate_value"})
+			break
+		}
+		seen[id] = struct{}{}
+	}
+	if strings.TrimSpace(r.Title) == "" {
+		details = append(details, response.ValidationDetail{Field: "title", Reason: "required"})
+	} else if len([]rune(strings.TrimSpace(r.Title))) > 80 {
+		details = append(details, response.ValidationDetail{Field: "title", Reason: "too_long"})
+	}
+	if strings.TrimSpace(r.Content) == "" {
+		details = append(details, response.ValidationDetail{Field: "content", Reason: "required"})
+	} else if len([]rune(strings.TrimSpace(r.Content))) > 1000 {
+		details = append(details, response.ValidationDetail{Field: "content", Reason: "too_long"})
+	}
+	if strings.TrimSpace(r.Kind) != "" && !isBatchNotificationKind(strings.TrimSpace(r.Kind)) {
+		details = append(details, response.ValidationDetail{Field: "kind", Reason: "invalid_value"})
+	}
+	return details
+}
+
+type batchNotificationView struct {
+	ID        uint64 `json:"id"`
+	StudentID uint64 `json:"student_id"`
+	Status    string `json:"status"`
+}
+
 type createOperationRequest struct {
 	OperationDate      string   `json:"operation_date"`
 	PickupMode         string   `json:"pickup_mode"`
@@ -243,6 +294,29 @@ type markOperationStudentRequest struct {
 	PhotoURL     string `json:"photo_url"`
 	OperatorName string `json:"operator_name"`
 	Note         string `json:"note"`
+}
+
+type bulkArriveOperationStudentsRequest struct {
+	StudentIDs []uint64 `json:"student_ids"`
+	Note       string   `json:"note"`
+}
+
+func (r bulkArriveOperationStudentsRequest) Validate() []response.ValidationDetail {
+	if len(r.StudentIDs) == 0 {
+		return []response.ValidationDetail{{Field: "student_ids", Reason: "required"}}
+	}
+	if len(r.StudentIDs) > 100 {
+		return []response.ValidationDetail{{Field: "student_ids", Reason: "too_many"}}
+	}
+	for _, studentID := range r.StudentIDs {
+		if studentID == 0 {
+			return []response.ValidationDetail{{Field: "student_ids", Reason: "invalid_value"}}
+		}
+	}
+	if len([]rune(strings.TrimSpace(r.Note))) > 500 {
+		return []response.ValidationDetail{{Field: "note", Reason: "too_long"}}
+	}
+	return nil
 }
 
 type correctEventRequest struct {
@@ -788,6 +862,8 @@ type closeCheckView struct {
 	CanFinish           bool                   `json:"can_finish"`
 	Pending             []operationStudentView `json:"pending"`
 	Exceptions          []workbenchAlert       `json:"exceptions"`
+	Blockers            []workbenchAlert       `json:"blockers"`
+	Warnings            []workbenchAlert       `json:"warnings"`
 	PendingPhotoCount   int                    `json:"pending_photo_count"`
 	ProfilePendingCount int                    `json:"profile_pending_count"`
 }
@@ -795,7 +871,7 @@ type closeCheckView struct {
 func (h *Handler) workbench(c *gin.Context) {
 	dateValue := strings.TrimSpace(c.Query("date"))
 	if dateValue == "" {
-		dateValue = time.Now().UTC().Format("2006-01-02")
+		dateValue = businessdate.TodayString(time.Now())
 	}
 	date, err := parseDate(dateValue)
 	if err != nil {
@@ -871,21 +947,47 @@ func (h *Handler) closeCheck(c *gin.Context) {
 		respondStoreError(c, err)
 		return
 	}
-	view := closeCheckView{OperationID: id, CanFinish: operation.Status == OperationStatusStarted}
+	view := closeCheckView{
+		OperationID: id,
+		CanFinish:   operation.Status == OperationStatusStarted,
+		Pending:     make([]operationStudentView, 0),
+		Exceptions:  make([]workbenchAlert, 0),
+		Blockers:    make([]workbenchAlert, 0),
+		Warnings:    make([]workbenchAlert, 0),
+	}
+	if operation.Status != OperationStatusStarted {
+		message := "当前接送任务还没有开始，不能收班"
+		kind := "task_not_started"
+		if operation.Status == OperationStatusFinished {
+			message = "当前接送任务已经结束，不能重复收班"
+			kind = "task_finished"
+		} else if operation.Status == OperationStatusCancelled {
+			message = "当前接送任务已取消，不能收班"
+			kind = "task_cancelled"
+		}
+		view.Blockers = append(view.Blockers, workbenchAlert{Kind: kind, OperationID: id, Message: message})
+	}
 	for _, student := range students {
 		if !IsReadyToFinish(student.Status) {
 			view.CanFinish = false
 			view.Pending = append(view.Pending, toOperationStudentView(student))
+			view.Blockers = append(view.Blockers, workbenchAlert{Kind: "student_pending", OperationID: id, StudentID: student.StudentID, StudentName: student.StudentName, Message: student.StudentName + "还没有完成接送状态确认"})
 		}
 		if student.Status == MemberStatusPickedUp && strings.TrimSpace(student.PhotoURL) == "" {
 			view.PendingPhotoCount++
 			view.CanFinish = false
+			view.Blockers = append(view.Blockers, workbenchAlert{Kind: "photo_pending", OperationID: id, StudentID: student.StudentID, StudentName: student.StudentName, Message: student.StudentName + "已登记接到但还没有接送照片"})
 		}
 		if student.ProfilePending {
 			view.ProfilePendingCount++
+			view.Warnings = append(view.Warnings, workbenchAlert{Kind: "profile_pending", OperationID: id, StudentID: student.StudentID, StudentName: student.StudentName, Message: student.StudentName + "是临时学生，档案还未补充完整"})
 		}
 		if student.Status == MemberStatusNotArrived || student.Status == MemberStatusAbnormal || student.Status == MemberStatusAbsent {
-			view.Exceptions = append(view.Exceptions, workbenchAlert{Kind: "exception", OperationID: id, StudentID: student.StudentID, StudentName: student.StudentName, Message: student.StudentName + "：" + pickupStatusLabel(student.Status)})
+			alert := workbenchAlert{Kind: "exception", OperationID: id, StudentID: student.StudentID, StudentName: student.StudentName, Message: student.StudentName + "：" + pickupStatusLabel(student.Status)}
+			view.Exceptions = append(view.Exceptions, alert)
+			if student.Status == MemberStatusAbsent {
+				view.Warnings = append(view.Warnings, alert)
+			}
 		}
 	}
 	response.OK(c, view)
@@ -1161,6 +1263,38 @@ func (h *Handler) markOperationStudent(c *gin.Context) {
 	response.OK(c, toOperationStudentView(item))
 }
 
+func (h *Handler) bulkArriveOperationStudents(c *gin.Context) {
+	if !canWritePickup(c) {
+		return
+	}
+	operationID, ok := parsePathID(c, "id")
+	if !ok {
+		return
+	}
+	if _, ok := h.operationForPrincipal(c, operationID); !ok {
+		return
+	}
+	var req bulkArriveOperationStudentsRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	_, operatorName := h.currentStaff(c)
+	items, err := h.store.BulkArriveOperationStudents(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), BulkArriveStudentsParams{OperationID: operationID, StudentIDs: req.StudentIDs, OperatorName: operatorName, Note: strings.TrimSpace(req.Note)})
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	out := make([]operationStudentView, 0, len(items))
+	for _, item := range items {
+		view := toOperationStudentView(item)
+		view.PhotoURL = h.signedPhotoURL(item.PhotoURL)
+		out = append(out, view)
+	}
+	h.recordAudit(c, "pickup.students.bulk_arrive", "pickup_operation", operationID)
+	response.OK(c, listResponse[operationStudentView]{Items: out, Total: len(out)})
+}
+
 func (h *Handler) listEvents(c *gin.Context) {
 	operationID, ok := parsePathID(c, "id")
 	if !ok {
@@ -1227,6 +1361,84 @@ func (h *Handler) listNotifications(c *gin.Context) {
 		out = append(out, notificationView{ID: item.ID, StudentID: item.StudentID, OperationID: item.OperationID, EventID: item.EventID, RecipientType: item.RecipientType, Kind: item.Kind, Title: item.Title, Content: item.Content, Status: item.Status, DeliveryAttempts: item.DeliveryAttempts, LastAttemptAt: formatTime(item.LastAttemptAt), DeliveryError: item.DeliveryError, NextRetryAt: formatTime(item.NextRetryAt), ReadAt: formatTime(item.ReadAt), CreatedAt: item.CreatedAt.Format(time.RFC3339)})
 	}
 	response.OK(c, listResponse[notificationView]{Items: out, Total: len(out)})
+}
+
+func (h *Handler) createBatchNotifications(c *gin.Context) {
+	if !canWritePickup(c) {
+		return
+	}
+	var req batchNotificationRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	if h.masterData == nil {
+		response.Error(c, response.Internal(errors.New("student archive is not configured")))
+		return
+	}
+	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	students, err := h.masterData.ListStudents(c.Request.Context(), orgID)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	studentByID := make(map[uint64]masterdata.Student, len(students))
+	for _, student := range students {
+		studentByID[student.ID] = student
+	}
+	params := make([]CreateNotificationParams, 0, len(req.StudentIDs))
+	for _, studentID := range req.StudentIDs {
+		student, exists := studentByID[studentID]
+		if !exists || student.Status != "active" {
+			response.Error(c, response.ValidationFailed([]response.ValidationDetail{{Field: "student_ids", Reason: "student_not_active"}}))
+			return
+		}
+		if !h.studentAllowed(c, student.SchoolClassID) {
+			respondAccessError(c, ErrUnauthorizedOperation)
+			return
+		}
+		params = append(params, CreateNotificationParams{StudentID: studentID, Kind: defaultBatchNotificationKind(req.Kind), Title: strings.TrimSpace(req.Title), Content: strings.TrimSpace(req.Content)})
+	}
+	created, err := h.store.CreateNotifications(c.Request.Context(), orgID, params)
+	if err != nil {
+		respondStoreError(c, err)
+		return
+	}
+	out := make([]batchNotificationView, 0, len(created))
+	for _, item := range created {
+		out = append(out, batchNotificationView{ID: item.ID, StudentID: item.StudentID, Status: item.Status})
+	}
+	resourceID := uint64(0)
+	if len(created) > 0 {
+		resourceID = created[0].ID
+	}
+	h.recordAudit(c, "notification.batch_create", "notification", resourceID)
+	response.OK(c, gin.H{"items": out, "total": len(out)})
+}
+
+func (h *Handler) studentAllowed(c *gin.Context, schoolClassID uint64) bool {
+	principal, scoped := h.staffPrincipal(c)
+	if !scoped || principal.Role != identity.UserRoleTeacher || h.assignments == nil {
+		return true
+	}
+	item, err := h.assignments.FindByPair(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), principal.SubjectID, schoolClassID)
+	return err == nil && item.Status == assignment.AssignmentStatusActive
+}
+
+func isBatchNotificationKind(value string) bool {
+	switch value {
+	case "teacher_notice", "pickup_reminder", "homework_reminder", "meal_reminder":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultBatchNotificationKind(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "teacher_notice"
+	}
+	return strings.TrimSpace(value)
 }
 
 func (h *Handler) listNotificationDeliveryLogs(c *gin.Context) {
