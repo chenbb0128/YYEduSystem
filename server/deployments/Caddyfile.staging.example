@@ -6,11 +6,11 @@ xy.pdurl.cn {
     reverse_proxy 127.0.0.1:8080
 }
 
-# 管理端建议使用独立子域名。将静态构建产物复制到 /srv/douya-admin。
-# 如果暂时不部署管理端，可先删除整个 admin.xy.pdurl.cn 站点块。
-admin.xy.pdurl.cn {
-    encode zstd gzip
-    root * /srv/douya-admin
-    try_files {path} /index.html
-    file_server
-}
+# 管理端建议使用独立子域名。确认 DNS 已配置后，再取消下面注释，
+# 并将静态构建产物复制到 /srv/douya-admin。
+# admin.xy.pdurl.cn {
+#     encode zstd gzip
+#     root * /srv/douya-admin
+#     try_files {path} /index.html
+#     file_server
+# }
