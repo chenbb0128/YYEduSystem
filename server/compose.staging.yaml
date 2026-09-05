@@ -1,0 +1,158 @@
+name: douya-growth-staging
+
+# 免费内测部署：MySQL、Redis、API、Worker 全部运行在现有服务器上。
+# API 只绑定到本机 8080，外部访问交给 Caddy/Nginx 处理 HTTPS。
+x-app-environment: &app-environment
+  TZ: Asia/Shanghai
+  TUOGUAN_SYSTEM_APP_NAME: 豆芽成长助手
+  TUOGUAN_SYSTEM_APP_ENV: staging
+  TUOGUAN_SYSTEM_HTTP_ADDR: :8080
+  TUOGUAN_SYSTEM_AUTH_SECRET: ${TUOGUAN_SYSTEM_AUTH_SECRET:?set TUOGUAN_SYSTEM_AUTH_SECRET in .env.staging}
+  TUOGUAN_SYSTEM_AUTH_ACCESS_TTL: 2h
+  TUOGUAN_SYSTEM_AUTH_REFRESH_TTL: 720h
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_ENABLED: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_ENABLED:-false}
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_USERNAME: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_USERNAME:-admin}
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_ADMIN_PASSWORD:-}
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_ENABLED: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_ENABLED:-false}
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_USERNAME: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_USERNAME:-platform}
+  TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_PASSWORD: ${TUOGUAN_SYSTEM_AUTH_BOOTSTRAP_PLATFORM_ADMIN_PASSWORD:-}
+  TUOGUAN_SYSTEM_WECHAT_ENABLED: ${TUOGUAN_SYSTEM_WECHAT_ENABLED:-false}
+  TUOGUAN_SYSTEM_WECHAT_APP_ID: ${TUOGUAN_SYSTEM_WECHAT_APP_ID:-}
+  TUOGUAN_SYSTEM_WECHAT_APP_SECRET: ${TUOGUAN_SYSTEM_WECHAT_APP_SECRET:-}
+  TUOGUAN_SYSTEM_WECHAT_ENDPOINT: https://api.weixin.qq.com/sns/jscode2session
+  TUOGUAN_SYSTEM_WECHAT_TIMEOUT: 5s
+  TUOGUAN_SYSTEM_WECHAT_MINI_PROGRAM_PAGE: pages/parent/index
+  TUOGUAN_SYSTEM_WECHAT_MINI_PROGRAM_ENV_VERSION: trial
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_PAGE: pages/parent/index
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_PICKUP: ${TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_PICKUP:-}
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_MEAL: ${TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_MEAL:-}
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_HOMEWORK: ${TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_HOMEWORK:-}
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_LEAVE: ${TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_LEAVE:-}
+  TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_SUMMARY: ${TUOGUAN_SYSTEM_WECHAT_SUBSCRIBE_TEMPLATES_SUMMARY:-}
+  TUOGUAN_SYSTEM_SMS_ENABLED: "false"
+  TUOGUAN_SYSTEM_OCR_ENABLED: "false"
+  TUOGUAN_SYSTEM_STORAGE_PROVIDER: local
+  TUOGUAN_SYSTEM_STORAGE_UPLOAD_DIR: data/uploads
+  TUOGUAN_SYSTEM_STORAGE_URL_SIGNING_SECRET: ${TUOGUAN_SYSTEM_STORAGE_URL_SIGNING_SECRET:?set TUOGUAN_SYSTEM_STORAGE_URL_SIGNING_SECRET in .env.staging}
+  TUOGUAN_SYSTEM_STORAGE_SIGNED_URL_TTL: 15m
+  TUOGUAN_SYSTEM_STORAGE_MAX_FILE_BYTES: 5242880
+  TUOGUAN_SYSTEM_STORAGE_RETENTION_DAYS: 90
+  TUOGUAN_SYSTEM_DATABASE_ENABLED: "true"
+  TUOGUAN_SYSTEM_DATABASE_DRIVER: mysql
+  TUOGUAN_SYSTEM_DATABASE_DSN: ${TUOGUAN_SYSTEM_DATABASE_DSN:?set TUOGUAN_SYSTEM_DATABASE_DSN in .env.staging}
+  TUOGUAN_SYSTEM_DATABASE_MAX_OPEN_CONNS: 25
+  TUOGUAN_SYSTEM_DATABASE_MAX_IDLE_CONNS: 5
+  TUOGUAN_SYSTEM_DATABASE_CONN_MAX_LIFETIME: 30m
+  TUOGUAN_SYSTEM_DATABASE_CONN_MAX_IDLE_TIME: 5m
+  TUOGUAN_SYSTEM_DATABASE_PING_TIMEOUT: 3s
+  TUOGUAN_SYSTEM_REDIS_ENABLED: "true"
+  TUOGUAN_SYSTEM_REDIS_ADDR: redis:6379
+  TUOGUAN_SYSTEM_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}
+  TUOGUAN_SYSTEM_REDIS_KEY_PREFIX: douya-growth:staging
+  TUOGUAN_SYSTEM_REDIS_POOL_SIZE: 10
+  TUOGUAN_SYSTEM_REDIS_MIN_IDLE_CONNS: 2
+  TUOGUAN_SYSTEM_WORKER_ENABLED: "true"
+  TUOGUAN_SYSTEM_WORKER_CONCURRENCY: 5
+  TUOGUAN_SYSTEM_WORKER_NOTIFICATION_POLL_INTERVAL: 2s
+  TUOGUAN_SYSTEM_WORKER_NOTIFICATION_LEASE: 30s
+  TUOGUAN_SYSTEM_WORKER_NOTIFICATION_MAX_ATTEMPTS: 3
+  TUOGUAN_SYSTEM_WORKER_SCHEDULE_GENERATION_INTERVAL: 5m
+  TUOGUAN_SYSTEM_OBSERVABILITY_METRICS_ENABLED: "true"
+  TUOGUAN_SYSTEM_OBSERVABILITY_METRICS_PATH: /metrics
+  TUOGUAN_SYSTEM_OBSERVABILITY_METRICS_NAMESPACE: douya_growth
+  TUOGUAN_SYSTEM_OBSERVABILITY_TRACING_ENABLED: "false"
+  TUOGUAN_SYSTEM_LOG_LEVEL: info
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env.staging}
+      MYSQL_DATABASE: tuoguan_system
+      MYSQL_USER: tuoguan_app
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?set MYSQL_APP_PASSWORD in .env.staging}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -utuoguan_app -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - staging_mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - staging_redis_data:/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deployments/Dockerfile
+      args:
+        TARGET: migrate
+    command: ["-command", "up"]
+    environment:
+      TUOGUAN_SYSTEM_APP_ENV: staging
+      TUOGUAN_SYSTEM_DATABASE_ENABLED: "true"
+      TUOGUAN_SYSTEM_DATABASE_DRIVER: mysql
+      TUOGUAN_SYSTEM_DATABASE_DSN: ${TUOGUAN_SYSTEM_DATABASE_DSN:?set TUOGUAN_SYSTEM_DATABASE_DSN in .env.staging}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: deployments/Dockerfile
+      args:
+        TARGET: api
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - staging_uploads:/app/data/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: deployments/Dockerfile
+      args:
+        TARGET: worker
+    environment: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  staging_mysql_data:
+  staging_redis_data:
+  staging_uploads:

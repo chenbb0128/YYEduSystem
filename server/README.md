@@ -361,6 +361,7 @@ configs/config.local.yaml
 
 - `configs/config.production.example.yaml`
 - `docs/production-runbook.md`
+- `docs/free-staging-deployment.md`（不购买云服务的免费内测部署）
 - `docs/privacy-policy.md`
 - `docs/real-device-test-checklist.md`
 
