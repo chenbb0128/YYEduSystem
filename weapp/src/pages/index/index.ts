@@ -1,13 +1,11 @@
-import type { PhoneLoginRole } from '@/services/auth'
 import { appEnv } from '@/config/env'
-import { getStoredPhoneLoginPhone, loginByPhone, loginParentWithWeChat, loginTeacher, logoutAuth, requestPhoneCode, savePhoneLoginRole } from '@/services/auth'
+import { loginParentWithWeChat, loginTeacher, logoutAuth } from '@/services/auth'
 import { request } from '@/services/request'
 import { syncStoreToPage, useAppStore } from '@/stores'
 import { showFeedback } from '@/utils/feedback'
 
 const appStore = useAppStore()
 let stopStoreSync: (() => void) | undefined
-let phoneCodeTimer: ReturnType<typeof setInterval> | undefined
 
 interface ApiEnvelope<T> {
   code: number
@@ -83,10 +81,6 @@ function openParentHome() {
   wx.navigateTo({ url: '/pages/parent/index' })
 }
 
-function findPhoneRole(roles: PhoneLoginRole[], key: PhoneLoginRole['key']) {
-  return roles.find(item => item.key === key)
-}
-
 function normalizePhone(value: string) {
   return value.replace(/\D/g, '')
 }
@@ -99,22 +93,11 @@ Page({
     authenticated: false,
     role: 'teacher' as 'parent' | 'teacher',
     loginMode: 'choose' as 'choose' | 'teacher',
-    focusedField: '' as '' | 'password' | 'phoneCode' | 'phoneNumber' | 'username',
-    username: '',
+    focusedField: '' as '' | 'password' | 'phoneNumber',
     password: '',
     loginLoading: false,
     parentLoginLoading: false,
     phoneNumber: '',
-    phoneCode: '',
-    phoneCodeSending: false,
-    phoneCodeCountdown: 0,
-    phoneCodeTarget: '',
-    phoneAuthorized: false,
-    phoneAuthLoading: false,
-    phoneAuthLabel: '',
-    phoneLoginRoles: [] as PhoneLoginRole[],
-    staffRoleAvailable: false,
-    staffRoleMessage: '手机号登录后自动识别教职工资格',
     summary: null as MasterSummary | null,
     summaryLoading: false,
     topSafeStyle: '--xy-nav-safe-top: 132rpx;',
@@ -122,7 +105,6 @@ Page({
   onLoad() {
     this.setData({
       topSafeStyle: resolveTopSafeStyle(),
-      phoneNumber: getStoredPhoneLoginPhone(),
     })
     stopStoreSync = syncStoreToPage(this, appStore, {
       select: state => ({
@@ -141,120 +123,14 @@ Page({
   onUnload() {
     stopStoreSync?.()
     stopStoreSync = undefined
-    if (phoneCodeTimer) {
-      clearInterval(phoneCodeTimer)
-      phoneCodeTimer = undefined
-    }
   },
   onShow() {
     if (appStore.authenticated && appStore.role === 'teacher') {
       void loadSummary()
     }
   },
-  completePhoneAuthorization(label: string, roles: PhoneLoginRole[]) {
-    const staffRole = findPhoneRole(roles, 'staff')
-    this.setData({
-      phoneAuthorized: true,
-      phoneAuthLoading: false,
-      phoneAuthLabel: label,
-      phoneLoginRoles: roles,
-      staffRoleAvailable: Boolean(staffRole?.available),
-      staffRoleMessage: staffRole?.message || '该手机号未登记为教职工，请联系管理员开通',
-      loginMode: 'choose',
-    })
-    this.showToast('手机号验证成功，请选择身份')
-  },
-  startPhoneCodeCountdown(seconds: number) {
-    if (phoneCodeTimer) {
-      clearInterval(phoneCodeTimer)
-    }
-    let remaining = Math.max(1, Math.ceil(seconds))
-    this.setData({ phoneCodeCountdown: remaining })
-    phoneCodeTimer = setInterval(() => {
-      remaining -= 1
-      if (remaining <= 0) {
-        if (phoneCodeTimer) {
-          clearInterval(phoneCodeTimer)
-          phoneCodeTimer = undefined
-        }
-        this.setData({ phoneCodeCountdown: 0 })
-        return
-      }
-      this.setData({ phoneCodeCountdown: remaining })
-    }, 1000)
-  },
-  async handleGetPhoneCode() {
-    if (this.data.phoneCodeSending || this.data.phoneCodeCountdown > 0) {
-      return
-    }
-    const phone = normalizePhone(this.data.phoneNumber)
-    if (!phone) {
-      this.showToast('请先输入手机号')
-      return
-    }
-    this.setData({ phoneCodeSending: true })
-    try {
-      const result = await requestPhoneCode(phone)
-      if (normalizePhone(this.data.phoneNumber) !== phone) {
-        return
-      }
-      this.setData({
-        phoneNumber: result.phone || phone,
-        phoneCode: result.debug_code || '',
-        phoneCodeTarget: result.phone || phone,
-      })
-      this.startPhoneCodeCountdown(result.retry_after || 60)
-      this.showToast(result.debug_code ? '本地测试验证码已生成' : '验证码已发送，请注意查收')
-    }
-    catch (error) {
-      this.showToast(error instanceof Error ? error.message : '验证码发送失败')
-    }
-    finally {
-      this.setData({ phoneCodeSending: false })
-    }
-  },
-  async handlePhoneLogin() {
-    if (this.data.phoneAuthLoading) {
-      return
-    }
-    const phone = normalizePhone(this.data.phoneNumber)
-    const code = this.data.phoneCode.trim()
-    if (!phone || !code) {
-      this.showToast('请输入手机号和验证码')
-      return
-    }
-    this.setData({ phoneAuthLoading: true })
-    try {
-      const result = await loginByPhone(phone, code)
-      this.completePhoneAuthorization(result.masked_phone || result.phone, result.roles)
-    }
-    catch (error) {
-      this.showToast(error instanceof Error ? error.message : '手机号登录失败')
-    }
-    finally {
-      this.setData({ phoneAuthLoading: false })
-    }
-  },
   async handleParentLogin() {
     if (this.data.parentLoginLoading) {
-      return
-    }
-    // Phone login is retained for local/staff compatibility. In a real
-    // mini-program, parent entry uses the official wx.login flow directly.
-    if (this.data.phoneAuthorized) {
-      const parentRole = findPhoneRole(this.data.phoneLoginRoles, 'parent')
-      if (!parentRole) {
-        this.showToast('当前手机号暂不能进入家长端')
-        return
-      }
-      try {
-        savePhoneLoginRole(parentRole)
-        appStore.markAuthenticated('parent')
-        openParentHome()
-      }
-      catch (error) {
-        this.showToast(error instanceof Error ? error.message : '家长登录失败')
-      }
       return
     }
     this.setData({ parentLoginLoading: true })
@@ -271,54 +147,34 @@ Page({
     }
   },
   handleOpenTeacherLogin() {
-    if (!this.data.phoneAuthorized) {
-      this.showToast('请先完成手机号验证码登录')
-      return
-    }
-    const staffRole = findPhoneRole(this.data.phoneLoginRoles, 'staff')
-    if (!staffRole?.available) {
-      this.showToast(staffRole?.message || '该手机号未登记为教职工，请联系管理员开通')
-      return
-    }
-    try {
-      savePhoneLoginRole(staffRole)
-      appStore.markAuthenticated('teacher')
-      void loadSummary()
-    }
-    catch (error) {
-      this.showToast(error instanceof Error ? error.message : '老师登录失败')
-    }
+    this.setData({ loginMode: 'teacher', focusedField: '' })
   },
   handleInput(event: WechatMiniprogram.Input) {
-    const field = event.currentTarget.dataset.field as 'password' | 'phoneCode' | 'phoneNumber' | 'username'
+    const field = event.currentTarget.dataset.field as 'password' | 'phoneNumber'
     const value = event.detail.value
-    if (field === 'phoneNumber' && this.data.phoneCodeTarget && normalizePhone(value) !== this.data.phoneCodeTarget) {
-      if (phoneCodeTimer) {
-        clearInterval(phoneCodeTimer)
-        phoneCodeTimer = undefined
-      }
-      this.setData({ phoneNumber: value, phoneCode: '', phoneCodeCountdown: 0, phoneCodeTarget: '' })
-      return
-    }
     this.setData({ [field]: value })
   },
   handleFocus(event: WechatMiniprogram.Input) {
-    const field = event.currentTarget.dataset.field as 'password' | 'phoneCode' | 'phoneNumber' | 'username'
+    const field = event.currentTarget.dataset.field as 'password' | 'phoneNumber'
     this.setData({ focusedField: field })
   },
   handleBlur() {
     this.setData({ focusedField: '' })
   },
   async handleTeacherLogin() {
-    const username = this.data.username.trim()
+    const phone = normalizePhone(this.data.phoneNumber)
     const password = this.data.password
-    if (!username || !password) {
-      this.showToast('请输入教师账号和密码')
+    if (!phone || !password) {
+      this.showToast('请输入手机号和密码')
+      return
+    }
+    if (phone.length < 7) {
+      this.showToast('请输入有效的手机号')
       return
     }
     this.setData({ loginLoading: true })
     try {
-      const result = await loginTeacher(username, password)
+      const result = await loginTeacher(phone, password)
       if (result.role === 'parent') {
         this.showToast('该账号是家长账号，请从家长端登录')
         return
@@ -380,7 +236,7 @@ Page({
     logoutAuth()
     appStore.clearAuthenticated()
     appStore.$patch({ summary: null })
-    this.setData({ loginMode: 'choose', focusedField: '', username: '', password: '' })
+    this.setData({ loginMode: 'choose', focusedField: '', phoneNumber: '', password: '' })
   },
   showToast(message: string) {
     showFeedback(this, message)
