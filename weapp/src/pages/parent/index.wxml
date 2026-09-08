@@ -47,11 +47,12 @@
       </view>
       <view class="form-card add-child-card">
         <view class="section-head"><view><view class="section-kicker">填写资料</view><view class="section-title">添加孩子</view></view><view class="section-note">提交后由老师审核</view></view>
-        <view class="muted-text intro-copy">只需要填写孩子姓名、年级、家长手机号和备注；学校、班级、托管班由老师审核时分配。</view>
+        <view class="muted-text intro-copy">没有班级二维码时填写学校和年级/班级；使用二维码进入时只需要填写孩子姓名。</view>
         <view wx:if="{{invitedSchoolClassID || inviteToken}}" class="success-note"><view class="success-note-icon">✓</view><view>已通过老师班级二维码进入，学校和班级信息已带入。</view></view>
         <view class="form-field"><text class="field-label">孩子姓名</text><view class="field-control"><input class="field-input" maxlength="64" placeholder="{{focusedField === 'childName' ? '' : '请输入孩子姓名'}}" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
         <block wx:if="{{!invitedSchoolClassID && !inviteToken}}">
-          <view class="form-field"><text class="field-label">孩子年级</text><view class="field-control"><input class="field-input" maxlength="32" placeholder="{{focusedField === 'classText' ? '' : '例如：一年级'}}" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+          <view class="form-field"><text class="field-label">所在学校</text><view class="field-control"><input class="field-input" maxlength="128" placeholder="{{focusedField === 'schoolName' ? '' : '请输入孩子所在学校'}}" data-field="schoolName" value="{{schoolName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+          <view class="form-field"><text class="field-label">孩子年级或班级</text><view class="field-control"><input class="field-input" maxlength="32" placeholder="{{focusedField === 'classText' ? '' : '例如：一年级 2 班'}}" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
         </block>
         <view class="form-field"><text class="field-label">家长手机号</text><view class="field-control"><input class="field-input" type="number" disabled maxlength="32" placeholder="{{focusedField === 'guardianPhone' ? '' : '登录手机号会自动带入'}}" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
         <view wx:if="{{editingApplicationID}}" class="warning-note form-note">这是补充资料，提交后会回到老师审核队列。</view>

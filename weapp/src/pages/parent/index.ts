@@ -437,6 +437,10 @@ Page({
       && this.data.classText.trim() === this.data.editingOriginalClassText,
     )
     const schoolClassID = this.data.invitedSchoolClassID || (retainsExistingClass ? this.data.editingSchoolClassID : 0)
+    if (!schoolClassID && !this.data.schoolName.trim()) {
+      this.showToast('请填写孩子所在学校')
+      return
+    }
     if (!schoolClassID && !this.data.classText.trim()) {
       this.showToast('请填写孩子年级')
       return

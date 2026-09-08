@@ -55,11 +55,17 @@
       <view class="field-control first-entry-control"><input class="field-input" maxlength="64" placeholder="请输入孩子姓名" data-field="childName" value="{{childName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
     </view>
 
-    <view wx:if="{{!isInvited}}" class="first-entry-field">
+    <block wx:if="{{!isInvited}}">
+      <view class="first-entry-field">
+        <text class="first-entry-label">所在学校</text>
+        <view class="field-control first-entry-control"><input class="field-input" maxlength="128" placeholder="请输入孩子所在学校" data-field="schoolName" value="{{schoolName}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
+      </view>
+      <view class="first-entry-field">
       <text class="first-entry-label">孩子所在年级或班级</text>
       <view class="field-control first-entry-control"><input class="field-input" maxlength="32" placeholder="例如：一年级 2 班" data-field="classText" value="{{classText}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view>
       <view class="first-entry-help">也可以让老师发班级二维码，扫码后自动带入。</view>
-    </view>
+      </view>
+    </block>
 
     <view class="first-entry-optional-toggle" bind:tap="toggleOptionalInfo">{{optionalVisible ? '收起补充说明' : '补充说明（可选）'}} <text>{{optionalVisible ? '⌃' : '⌄'}}</text></view>
     <view wx:if="{{optionalVisible}}" class="first-entry-optional-field">
