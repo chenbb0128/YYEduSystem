@@ -446,8 +446,7 @@ Page({
       const payload = {
         student_name: childName,
         school_name: this.data.schoolName.trim(),
-        grade: this.data.classText.trim(),
-        class_name: this.data.classText.trim(),
+        class_text: this.data.classText.trim(),
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
         ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),

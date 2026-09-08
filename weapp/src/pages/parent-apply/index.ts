@@ -156,10 +156,7 @@ Page({
       const payload = {
         student_name: childName,
         school_name: this.data.schoolName.trim(),
-        grade: this.data.classText.trim(),
-        // Keep the original class text in the compatibility field as well.
-        // New servers normalize it; older servers can still read class_name.
-        class_name: this.data.classText.trim(),
+        class_text: this.data.classText.trim(),
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
         ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),
