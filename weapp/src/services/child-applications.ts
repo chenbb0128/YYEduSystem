@@ -57,6 +57,7 @@ interface ApiEnvelope<T> {
   code: number
   data: T
   message: string
+  details?: Array<{ field?: string, reason?: string }>
 }
 
 interface PageResult<T> {
@@ -67,7 +68,20 @@ interface PageResult<T> {
 async function applicationRequest<T>(url: string, method: 'GET' | 'POST' | 'PUT' = 'GET', data?: unknown) {
   const response = await request<ApiEnvelope<T>>({ method, url, data })
   if (response.code !== 0) {
-    throw new Error(response.message || '请求失败')
+    const labels: Record<string, string> = {
+      student_name: '孩子姓名',
+      grade: '年级',
+      class_name: '班级',
+      school_name: '学校',
+      guardian_phone: '家长手机号',
+      guardian_name: '家长姓名',
+      relationship: '关系',
+    }
+    const detailText = (response.details || [])
+      .map(item => labels[item.field || ''] || item.field || '')
+      .filter(Boolean)
+      .join('、')
+    throw new Error(detailText ? `${response.message || '请求失败'}：请检查${detailText}` : (response.message || '请求失败'))
   }
   return response.data
 }

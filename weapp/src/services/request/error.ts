@@ -43,7 +43,33 @@ function getResponseMessage(data: unknown) {
   }
 
   const message = Reflect.get(data, 'message')
-  return typeof message === 'string' && message.trim() ? message : undefined
+  const baseMessage = typeof message === 'string' && message.trim() ? message.trim() : undefined
+  const details = Reflect.get(data, 'details')
+  if (!Array.isArray(details) || !baseMessage) {
+    return baseMessage
+  }
+
+  const labels: Record<string, string> = {
+    student_name: '孩子姓名',
+    grade: '年级',
+    class_name: '班级',
+    class_text: '班级信息',
+    school_name: '学校',
+    school_class_id: '班级',
+    guardian_phone: '家长手机号',
+    guardian_name: '家长姓名',
+    relationship: '关系',
+  }
+  const fields = details
+    .map((item: unknown) => {
+      if (!item || typeof item !== 'object') {
+        return ''
+      }
+      const field = Reflect.get(item, 'field')
+      return typeof field === 'string' ? (labels[field] || field) : ''
+    })
+    .filter(Boolean)
+  return fields.length ? `${baseMessage}：请检查${[...new Set(fields)].join('、')}` : baseMessage
 }
 
 export function normalizeRequestError(error: unknown) {
