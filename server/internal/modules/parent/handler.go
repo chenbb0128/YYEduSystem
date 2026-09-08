@@ -487,8 +487,8 @@ func (r childApplicationRequest) Validate() []response.ValidationDetail {
 	if strings.TrimSpace(r.StudentName) == "" {
 		details = append(details, response.ValidationDetail{Field: "student_name", Reason: "required"})
 	}
-	if strings.TrimSpace(r.InviteToken) == "" && r.SchoolClassID == 0 && strings.TrimSpace(r.Grade) == "" && strings.TrimSpace(r.ClassText) == "" {
-		details = append(details, response.ValidationDetail{Field: "grade", Reason: "required"})
+	if normalizeLoginPhone(r.GuardianPhone) == "" {
+		details = append(details, response.ValidationDetail{Field: "guardian_phone", Reason: "required"})
 	}
 	return details
 }
@@ -945,7 +945,7 @@ func (h *Handler) createChildApplication(c *gin.Context) {
 		Grade:           grade,
 		ClassName:       className,
 		GuardianName:    guardianName,
-		GuardianPhone:   strings.TrimSpace(req.GuardianPhone),
+		GuardianPhone:   normalizeLoginPhone(req.GuardianPhone),
 		Relationship:    defaultString(req.Relationship, "家长"),
 		Notes:           strings.TrimSpace(req.Notes),
 	})
@@ -1026,7 +1026,7 @@ func (h *Handler) updateChildApplication(c *gin.Context) {
 		Grade:           grade,
 		ClassName:       className,
 		GuardianName:    guardianName,
-		GuardianPhone:   strings.TrimSpace(req.GuardianPhone),
+		GuardianPhone:   normalizeLoginPhone(req.GuardianPhone),
 		Relationship:    defaultString(req.Relationship, "家长"),
 		Notes:           strings.TrimSpace(req.Notes),
 	}})

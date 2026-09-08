@@ -1,11 +1,7 @@
 <script lang="ts" setup>
-import type { ChildApplicationRecord } from '#/api/child-applications';
-import type { HomeworkStudentStatus, HomeworkTaskRecord } from '#/api/homework';
+import type { HomeworkTaskRecord } from '#/api/homework';
 import type { MasterSummary } from '#/api/master-data';
-import type {
-  PickupOperationRecord,
-  PickupOperationStudentRecord,
-} from '#/api/pickup';
+import type { DailyOverviewRecord } from '#/api/reports';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -14,17 +10,9 @@ import { useUserStore } from '@vben/stores';
 
 import { ElAlert, ElButton, ElCard, ElTag } from 'element-plus';
 
-import { getChildApplicationsApi } from '#/api/child-applications';
-import {
-  getHomeworkTasksApi,
-  getHomeworkTaskStudentsApi,
-} from '#/api/homework';
-import { getLeaveRequestsApi } from '#/api/leave-requests';
+import { getHomeworkTasksApi } from '#/api/homework';
 import { getMasterSummaryApi } from '#/api/master-data';
-import {
-  getPickupOperationsApi,
-  getPickupOperationStudentsApi,
-} from '#/api/pickup';
+import { getDailyOverviewApi } from '#/api/reports';
 import { businessToday } from '#/utils/business-date';
 
 defineOptions({ name: 'Dashboard' });
@@ -35,12 +23,14 @@ const today = businessToday();
 const loading = ref(false);
 const loadError = ref(false);
 const summary = ref<MasterSummary | null>(null);
-const pickupOperations = ref<PickupOperationRecord[]>([]);
-const pickupStudents = ref<PickupOperationStudentRecord[]>([]);
+const dailyOverview = ref<DailyOverviewRecord | null>(null);
 const homeworkTasks = ref<HomeworkTaskRecord[]>([]);
-const homeworkStudents = ref<Array<{ status: HomeworkStudentStatus }>>([]);
-const pendingLeaveCount = ref<null | number>(null);
-const pendingApplicationCount = ref<null | number>(null);
+const pendingLeaveCount = computed(
+  () => dailyOverview.value?.pending_leave_requests ?? null,
+);
+const pendingApplicationCount = computed(
+  () => dailyOverview.value?.pending_applications ?? null,
+);
 
 function safeItems<T>(page?: null | { items?: null | T[] }) {
   return Array.isArray(page?.items) ? page.items : [];
@@ -58,24 +48,21 @@ const displayDate = computed(() =>
 );
 
 const pickupSummary = computed(() => {
-  const total = pickupStudents.value.length;
-  const picked = pickupStudents.value.filter((student) =>
-    ['parent_picked_up', 'picked_up'].includes(student.status),
-  ).length;
-  const arrived = pickupStudents.value.filter((student) =>
-    ['arrived', 'self_arrived'].includes(student.status),
-  ).length;
-  const abnormal = pickupStudents.value.filter((student) =>
-    ['abnormal', 'absent', 'not_arrived'].includes(student.status),
-  ).length;
+  const statuses = dailyOverview.value?.pickup.statuses ?? {};
+  const total = dailyOverview.value?.pickup.students ?? 0;
+  const picked = (statuses.parent_picked_up ?? 0) + (statuses.picked_up ?? 0);
+  const arrived = (statuses.arrived ?? 0) + (statuses.self_arrived ?? 0);
+  const abnormal =
+    (statuses.abnormal ?? 0) +
+    (statuses.absent ?? 0) +
+    (statuses.not_arrived ?? 0);
   return { abnormal, arrived, picked, total };
 });
 
 const homeworkSummary = computed(() => {
-  const total = homeworkStudents.value.length;
-  const completed = homeworkStudents.value.filter(
-    (student) => student.status === 'completed',
-  ).length;
+  const homework = dailyOverview.value?.homework;
+  const total = homework?.students ?? 0;
+  const completed = homework?.completed ?? 0;
   return {
     completed,
     percent: total ? Math.round((completed / total) * 100) : 0,
@@ -209,53 +196,20 @@ function goTo(path: string) {
 async function loadDashboard() {
   loading.value = true;
   loadError.value = false;
-  const [
-    summaryResult,
-    pickupResult,
-    homeworkResult,
-    leaveResult,
-    applicationResult,
-  ] = await Promise.allSettled([
-    getMasterSummaryApi(),
-    getPickupOperationsApi({ date: today }),
-    getHomeworkTasksApi({ date: today }),
-    getLeaveRequestsApi(),
-    getChildApplicationsApi(),
-  ]);
+  const [summaryResult, overviewResult, homeworkResult] =
+    await Promise.allSettled([
+      getMasterSummaryApi(),
+      getDailyOverviewApi({ date: today }),
+      getHomeworkTasksApi({ date: today }),
+    ]);
 
   if (summaryResult.status === 'fulfilled') summary.value = summaryResult.value;
-  if (pickupResult.status === 'fulfilled') {
-    pickupOperations.value = safeItems(pickupResult.value);
-    const detailResults = await Promise.allSettled(
-      pickupOperations.value.map((operation) =>
-        getPickupOperationStudentsApi(operation.id),
-      ),
-    );
-    pickupStudents.value = detailResults.flatMap((result) =>
-      result.status === 'fulfilled' ? safeItems(result.value) : [],
-    );
-  }
+  if (overviewResult.status === 'fulfilled')
+    dailyOverview.value = overviewResult.value;
   if (homeworkResult.status === 'fulfilled') {
     homeworkTasks.value = safeItems(homeworkResult.value);
-    const detailResults = await Promise.allSettled(
-      homeworkTasks.value.map((task) => getHomeworkTaskStudentsApi(task.id)),
-    );
-    homeworkStudents.value = detailResults.flatMap((result) =>
-      result.status === 'fulfilled' ? safeItems(result.value) : [],
-    );
   }
-  if (leaveResult.status === 'fulfilled') {
-    pendingLeaveCount.value = safeItems(leaveResult.value).filter(
-      (request) => request.status === 'pending',
-    ).length;
-  }
-  if (applicationResult.status === 'fulfilled') {
-    pendingApplicationCount.value = safeItems(applicationResult.value).filter(
-      (application: ChildApplicationRecord) =>
-        application.status === 'pending' || application.status === 'needs_info',
-    ).length;
-  }
-  loadError.value = [summaryResult, pickupResult, homeworkResult].some(
+  loadError.value = [summaryResult, overviewResult, homeworkResult].some(
     (result) => result.status === 'rejected',
   );
   loading.value = false;
@@ -297,7 +251,7 @@ onMounted(loadDashboard);
         <div class="sprout-metric-label">今日接送人数</div>
         <div class="sprout-metric-value">{{ pickupSummary.total }}</div>
         <div class="sprout-metric-note">
-          {{ pickupOperations.length }} 个班级任务
+          {{ dailyOverview?.pickup.operations ?? '--' }} 个班级任务
         </div>
       </article>
       <article class="sprout-metric-card tone-sky">

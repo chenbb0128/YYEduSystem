@@ -15,8 +15,11 @@ import { getParentSubscriptions, hasConfiguredSubscriptionTemplates, requestPare
 import { getParentDailySummary, markParentDailySummaryRead } from '@/services/summary'
 import { useAppStore } from '@/stores'
 import { showFeedback } from '@/utils/feedback'
+import { createLoadGuard } from '@/utils/load-guard'
 
 const appStore = useAppStore()
+const parentLoadGuard = createLoadGuard()
+let selectedChildLoadSequence = 0
 
 function nextDate(date: string) {
   const value = new Date(`${date}T00:00:00`)
@@ -44,6 +47,10 @@ function offsetDate(date: string, offset: number) {
   const month = `${value.getMonth() + 1}`.padStart(2, '0')
   const day = `${value.getDate()}`.padStart(2, '0')
   return `${value.getFullYear()}-${month}-${day}`
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, '')
 }
 
 type ParentPickupEventView = ParentPickupEvent & { photo_url_signed: string, status_label: string }
@@ -156,6 +163,9 @@ Page({
     contentReady: false,
     activeTab: 'home' as ParentTab,
     loading: false,
+    applicationSubmitting: false,
+    leaveSubmitting: false,
+    pickupChangeSubmitting: false,
     bound: false,
     applications: [] as ChildApplicationView[],
     invitedSchoolClassID: 0,
@@ -226,18 +236,24 @@ Page({
     void this.loadParentData()
   },
   async loadParentData() {
+    return parentLoadGuard.run(() => this.loadParentDataInternal())
+  },
+  async loadParentDataInternal() {
     this.setData({ loading: true })
     try {
       const privacyAccepted = await this.loadPrivacyConsent()
       if (!privacyAccepted) {
         this.clearParentContent()
+        this.setData({ loading: false })
         return
       }
       const me = await getParentMe()
       if (!(me.children || []).length) {
         if (this.data.redirectingToApply) {
+          this.setData({ loading: false })
           return
         }
+        parentLoadGuard.markDirty()
         this.clearParentContent()
         this.setData({ contentReady: false, loading: false, redirectingToApply: true })
         this.openAddChildPage(true)
@@ -245,41 +261,40 @@ Page({
       }
       this.setData({ redirectingToApply: false })
       await this.applyParentMe(me)
+      this.setData({ loading: false })
+      void this.loadParentAccountSecondaryData()
     }
     catch (error) {
       if (isRequestError(error) && error.code === 'UNAUTHORIZED') {
         this.handleAuthExpired()
+        this.setData({ loading: false })
         return
       }
       this.clearParentContent()
+      parentLoadGuard.markDirty()
       this.showToast(error instanceof Error ? error.message : '家长数据加载失败，请重试')
-      return
-    }
-    await this.loadSubscriptionStatus()
-    try {
-      const applications = await getParentChildApplications()
-      this.setData({ applications: applications.items.map(item => ({ ...item, status_label: applicationStatusLabels[item.status] || item.status })) })
-    }
-    catch (error) {
-      this.setData({ applications: [] })
-      this.showToast(error instanceof Error ? error.message : '申请记录暂时无法加载')
-    }
-    finally {
       this.setData({ loading: false })
+    }
+  },
+  async loadParentAccountSecondaryData() {
+    try {
+      const [subscriptionResult, applicationResult] = await Promise.allSettled([getParentSubscriptions(), getParentChildApplications()])
+      if (subscriptionResult.status === 'fulfilled') {
+        this.setData({ subscriptions: subscriptionResult.value.items.map(toSubscriptionView) })
+      }
+      if (applicationResult.status === 'fulfilled') {
+        this.setData({ applications: applicationResult.value.items.map(item => ({ ...item, status_label: applicationStatusLabels[item.status] || item.status })) })
+      }
+      else {
+        this.showToast(applicationResult.reason instanceof Error ? applicationResult.reason.message : '申请记录暂时无法加载')
+      }
+    }
+    catch {
+      // Account-side secondary data must not hide the already loaded child timeline.
     }
   },
   clearParentContent() {
     this.setData({ bound: false, children: [], applications: [], events: [], notifications: [], notificationUnreadCount: 0, notificationNextCursor: 0, notificationHasMore: false, homework: [], leaves: [], pickupToday: null, meals: [], tomorrowMeals: [], mealHistory: [], dietNote: '', dietNoteRequests: [], dailySummary: null, dailySummaryChildUpdate: '', subscriptions: [], selectedStudentClassLabel: '班级待同步', dynamicLoadNotice: '' })
-  },
-  async loadSubscriptionStatus() {
-    try {
-      const result = await getParentSubscriptions()
-      this.setData({ subscriptions: result.items.map(toSubscriptionView) })
-    }
-    catch {
-      // 授权状态不是业务主数据，加载失败时保留站内消息和孩子动态。
-      this.setData({ subscriptions: [] })
-    }
   },
   async loadPrivacyConsent(): Promise<boolean> {
     this.setData({ privacyConsentLoading: true })
@@ -306,7 +321,12 @@ Page({
     if (this.data.privacyConsentLoading) {
       return
     }
-    await this.loadPrivacyConsent()
+    parentLoadGuard.markDirty()
+    const accepted = await this.loadPrivacyConsent()
+    if (accepted) {
+      parentLoadGuard.markDirty()
+      void this.loadParentData()
+    }
   },
   handlePrivacyBackToLogin() {
     this.handleAuthExpired()
@@ -320,6 +340,7 @@ Page({
       await recordParentPrivacyConsent(this.data.privacyPolicyVersion)
       this.setData({ privacyConsentVisible: false })
       this.showToast('已同意隐私说明')
+      parentLoadGuard.markDirty()
       void this.loadParentData()
     }
     catch (error) {
@@ -341,26 +362,56 @@ Page({
     await this.loadSelectedChildData(selectedStudentID)
   },
   async loadSelectedChildData(studentID: number) {
-    const results = await Promise.allSettled([getParentPickupEvents(studentID, this.data.date), getParentNotifications({ limit: 20 }), getParentHomework(studentID), getParentLeaveRequests(), getParentPickupToday(studentID, this.data.date), getParentMeals(this.data.date), getParentMeals(this.data.tomorrowDate), getParentDietNote(studentID), getParentDailySummary(this.data.date), getParentMealHistory(offsetDate(this.data.date, -6), this.data.date), getParentDietNoteChangeRequests(studentID)])
-    const [eventsResult, notificationsResult, homeworkResult, leavesResult, pickupTodayResult, mealsResult, tomorrowMealsResult, dietNoteResult, dailySummaryResult, mealHistoryResult, dietNoteRequestsResult] = results
+    const loadSequence = ++selectedChildLoadSequence
+    const isCurrent = () => loadSequence === selectedChildLoadSequence && this.data.selectedStudentID === studentID
+    this.setData({ dynamicLoadNotice: '正在同步孩子的最新动态…' })
+    const criticalResults = await Promise.allSettled([
+      getParentPickupToday(studentID, this.data.date),
+      getParentPickupEvents(studentID, this.data.date),
+      getParentNotifications({ limit: 20 }),
+      getParentMeals(this.data.date),
+      getParentHomework(studentID),
+      getParentDailySummary(this.data.date),
+    ])
+    if (!isCurrent()) {
+      return
+    }
+    const [pickupTodayResult, eventsResult, notificationsResult, mealsResult, homeworkResult, dailySummaryResult] = criticalResults
+    const pickupToday = pickupTodayResult.status === 'fulfilled' ? pickupTodayResult.value : null
     const events = eventsResult.status === 'fulfilled' ? eventsResult.value : { items: [] }
     const notifications = notificationsResult.status === 'fulfilled' ? notificationsResult.value : { items: [], unread: 0, next_cursor: 0 }
-    const homework = homeworkResult.status === 'fulfilled' ? homeworkResult.value : { items: [] }
-    const leaves = leavesResult.status === 'fulfilled' ? leavesResult.value : { items: [] }
-    const pickupToday = pickupTodayResult.status === 'fulfilled' ? pickupTodayResult.value : null
     const meals = mealsResult.status === 'fulfilled' ? mealsResult.value : { items: [] }
+    const homework = homeworkResult.status === 'fulfilled' ? homeworkResult.value : { items: [] }
+    const dailySummaryValue = dailySummaryResult.status === 'fulfilled' ? dailySummaryResult.value : null
+    if (dailySummaryValue && !dailySummaryValue.read_at) {
+      void markParentDailySummaryRead(dailySummaryValue.id).catch(() => undefined)
+      dailySummaryValue.read_at = new Date().toISOString()
+    }
+    const criticalFailed = criticalResults.some(result => result.status === 'rejected')
+    this.setData({ events: events.items.map(toPickupEventView), notifications: notifications.items, notificationUnreadCount: notifications.unread, notificationNextCursor: notifications.next_cursor, notificationHasMore: notifications.next_cursor > 0, homework: homework.items.map(toHomeworkView), pickupToday: pickupToday ? toPickupTodayView(pickupToday) : null, meals: meals.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), dailySummary: dailySummaryValue, dailySummaryChildUpdate: dailySummaryValue?.child_updates?.[String(studentID)] || '', dynamicLoadNotice: criticalFailed ? '部分今日动态暂时加载失败，请下拉或重新进入页面。' : '正在补充历史记录和家庭安排…' })
+
+    void this.loadSelectedChildSecondaryData(studentID, loadSequence, criticalFailed)
+  },
+  async loadSelectedChildSecondaryData(studentID: number, loadSequence: number, criticalFailed: boolean) {
+    const isCurrent = () => loadSequence === selectedChildLoadSequence && this.data.selectedStudentID === studentID
+    const results = await Promise.allSettled([
+      getParentLeaveRequests(),
+      getParentMeals(this.data.tomorrowDate),
+      getParentDietNote(studentID),
+      getParentMealHistory(offsetDate(this.data.date, -6), this.data.date),
+      getParentDietNoteChangeRequests(studentID),
+    ])
+    if (!isCurrent()) {
+      return
+    }
+    const [leavesResult, tomorrowMealsResult, dietNoteResult, mealHistoryResult, dietNoteRequestsResult] = results
+    const leaves = leavesResult.status === 'fulfilled' ? leavesResult.value : { items: [] }
     const tomorrowMeals = tomorrowMealsResult.status === 'fulfilled' ? tomorrowMealsResult.value : { items: [] }
     const dietNote = dietNoteResult.status === 'fulfilled' ? dietNoteResult.value : null
-    const dailySummaryValue = dailySummaryResult.status === 'fulfilled' ? dailySummaryResult.value : null
     const mealHistory = mealHistoryResult.status === 'fulfilled' ? mealHistoryResult.value : { items: [] }
     const dietNoteRequests = dietNoteRequestsResult.status === 'fulfilled' ? dietNoteRequestsResult.value : { items: [] }
-    const dailySummary = dailySummaryValue
-    if (dailySummary && !dailySummary.read_at) {
-      void markParentDailySummaryRead(dailySummary.id).catch(() => undefined)
-      dailySummary.read_at = new Date().toISOString()
-    }
     const hasFailed = results.some(result => result.status === 'rejected')
-    this.setData({ events: events.items.map(toPickupEventView), notifications: notifications.items, notificationUnreadCount: notifications.unread, notificationNextCursor: notifications.next_cursor, notificationHasMore: notifications.next_cursor > 0, homework: homework.items.map(toHomeworkView), leaves: leaves.items.map(toLeaveView), pickupToday: pickupToday ? toPickupTodayView(pickupToday) : null, meals: meals.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), tomorrowMeals: tomorrowMeals.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), mealHistory: mealHistory.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), dietNote: dietNote?.note || '', dietNoteRequests: dietNoteRequests.items.map(toDietNoteChangeRequestView), dailySummary: dailySummaryValue, dailySummaryChildUpdate: dailySummaryValue?.child_updates?.[String(studentID)] || '', dynamicLoadNotice: hasFailed ? '部分动态暂时加载失败，请稍后重新进入页面。' : '' })
+    this.setData({ leaves: leaves.items.map(toLeaveView), tomorrowMeals: tomorrowMeals.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), mealHistory: mealHistory.items.map(item => ({ ...item, photo_url_signed: mealPhotoURL(item.photo_url) })), dietNote: dietNote?.note || '', dietNoteRequests: dietNoteRequests.items.map(toDietNoteChangeRequestView), dynamicLoadNotice: criticalFailed ? '部分今日动态暂时加载失败，请下拉或重新进入页面。' : hasFailed ? '部分历史记录暂时加载失败，请稍后重试。' : '' })
   },
   handleInput(event: WechatMiniprogram.Input) {
     const field = event.currentTarget.dataset.field as ParentFormField
@@ -421,10 +472,21 @@ Page({
     }
   },
   async handleSubmitApplication() {
+    if (this.data.applicationSubmitting) {
+      return
+    }
     const childName = this.data.childName.trim()
-    const guardianPhone = this.data.guardianPhone.trim()
+    const guardianPhone = normalizePhone(this.data.guardianPhone.trim())
     if (!childName) {
       this.showToast('请填写孩子姓名')
+      return
+    }
+    if (!guardianPhone) {
+      this.showToast('请填写家长手机号')
+      return
+    }
+    if (guardianPhone.length < 7) {
+      this.showToast('请输入有效的家长手机号')
       return
     }
     if (this.data.inviteToken && !this.data.invitedSchoolClassID) {
@@ -437,15 +499,7 @@ Page({
       && this.data.classText.trim() === this.data.editingOriginalClassText,
     )
     const schoolClassID = this.data.invitedSchoolClassID || (retainsExistingClass ? this.data.editingSchoolClassID : 0)
-    if (!schoolClassID && !this.data.schoolName.trim()) {
-      this.showToast('请填写孩子所在学校')
-      return
-    }
-    if (!schoolClassID && !this.data.classText.trim()) {
-      this.showToast('请填写孩子年级')
-      return
-    }
-    this.setData({ loading: true })
+    this.setData({ applicationSubmitting: true })
     try {
       const payload = {
         student_name: childName,
@@ -454,7 +508,7 @@ Page({
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
         ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),
-        ...(guardianPhone ? { guardian_phone: guardianPhone } : {}),
+        guardian_phone: guardianPhone,
         relationship: this.data.relationship.trim() || '家长',
         notes: this.data.applicationNotes.trim(),
       }
@@ -465,10 +519,11 @@ Page({
         await createParentChildApplication(payload)
       }
       this.showToast(this.data.editingApplicationID ? '补充资料已提交，等待老师审核' : '申请已提交，等待老师审核')
-      this.setData({ editingApplicationID: 0, editingSchoolClassID: 0, editingOriginalSchoolName: '', editingOriginalClassText: '', childName: '', schoolName: '', classText: '', guardianName: '', guardianPhone: getStoredPhoneLoginPhone(), relationship: '', applicationNotes: '', focusedField: '' })
+      this.setData({ editingApplicationID: 0, editingSchoolClassID: 0, editingOriginalSchoolName: '', editingOriginalClassText: '', childName: '', schoolName: '', classText: '', guardianName: '', guardianPhone, relationship: '', applicationNotes: '', focusedField: '' })
       if (this.data.inviteToken) {
         clearPendingClassInviteToken()
       }
+      parentLoadGuard.markDirty()
       await this.loadParentData()
     }
     catch (error) {
@@ -479,7 +534,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '绑定失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ applicationSubmitting: false })
     }
   },
   handleResubmitApplication(event: WechatMiniprogram.TouchEvent) {
@@ -521,11 +576,14 @@ Page({
     }
   },
   async handleSubmitLeave() {
+    if (this.data.leaveSubmitting) {
+      return
+    }
     if (!this.data.selectedStudentID || !this.data.leaveDate || !this.data.leaveReason.trim()) {
       this.showToast('请填写请假日期和原因')
       return
     }
-    this.setData({ loading: true })
+    this.setData({ leaveSubmitting: true })
     try {
       await createParentLeaveRequest(this.data.selectedStudentID, { leave_date: this.data.leaveDate, reason: this.data.leaveReason.trim() })
       this.showToast('请假已提交，等待老师确认')
@@ -537,7 +595,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '请假提交失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ leaveSubmitting: false })
     }
   },
   async handleEditLeave(event: WechatMiniprogram.TouchEvent) {
@@ -563,7 +621,10 @@ Page({
     })
   },
   async updateLeave(leave: LeaveRequestView, reason: string) {
-    this.setData({ loading: true })
+    if (this.data.leaveSubmitting) {
+      return
+    }
+    this.setData({ leaveSubmitting: true })
     try {
       const updated = await updateParentLeaveRequest(leave.id, { leave_date: leave.leave_date, reason })
       this.setData({ leaves: this.data.leaves.map(item => item.id === updated.id ? toLeaveView(updated) : item) })
@@ -573,21 +634,21 @@ Page({
       this.showToast(error instanceof Error ? error.message : '请假修改失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ leaveSubmitting: false })
     }
   },
   async handleCancelLeave(event: WechatMiniprogram.TouchEvent) {
     const leaveID = Number(event.currentTarget.dataset.leaveId)
     const leave = this.data.leaves.find(item => item.id === leaveID)
-    if (!leave || leave.status !== 'pending' || this.data.loading) {
+    if (!leave || leave.status !== 'pending' || this.data.leaveSubmitting) {
       return
     }
     const cancel = () => {
-      this.setData({ loading: true })
+      this.setData({ leaveSubmitting: true })
       void cancelParentLeaveRequest(leaveID).then((updated) => {
         this.setData({ leaves: this.data.leaves.map(item => item.id === updated.id ? toLeaveView(updated) : item) })
         this.showToast('请假申请已撤回')
-      }).catch(error => this.showToast(error instanceof Error ? error.message : '请假撤回失败')).finally(() => this.setData({ loading: false }))
+      }).catch(error => this.showToast(error instanceof Error ? error.message : '请假撤回失败')).finally(() => this.setData({ leaveSubmitting: false }))
     }
     if (typeof wx === 'undefined') {
       cancel()
@@ -621,11 +682,14 @@ Page({
     this.setData({ changeStatus: event.currentTarget.dataset.status })
   },
   async handleSubmitPickupChange() {
+    if (this.data.pickupChangeSubmitting) {
+      return
+    }
     if (!this.data.selectedStudentID || !this.data.changeNote.trim()) {
       this.showToast('请填写临时接送说明')
       return
     }
-    this.setData({ loading: true })
+    this.setData({ pickupChangeSubmitting: true })
     try {
       await createParentPickupChange(this.data.selectedStudentID, { change_date: this.data.date, requested_status: this.data.changeStatus, note: this.data.changeNote.trim() })
       this.showToast('临时变更已提交，老师会在工作台确认')
@@ -635,7 +699,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '临时变更提交失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ pickupChangeSubmitting: false })
     }
   },
   handleEditDietNote() {

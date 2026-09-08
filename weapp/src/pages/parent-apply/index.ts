@@ -6,8 +6,10 @@ import { getParentMe } from '@/services/parent'
 import { isRequestError } from '@/services/request'
 import { useAppStore } from '@/stores'
 import { showFeedback } from '@/utils/feedback'
+import { createLoadGuard } from '@/utils/load-guard'
 
 const appStore = useAppStore()
+const applicationLoadGuard = createLoadGuard()
 
 type ParentFormField = 'childName' | 'schoolName' | 'classText' | 'guardianName' | 'guardianPhone' | 'relationship' | 'applicationNotes'
 
@@ -38,9 +40,14 @@ function decodeInviteToken(value: string | undefined) {
   }
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, '')
+}
+
 Page({
   data: {
     loading: false,
+    submitting: false,
     hasBoundChild: false,
     applications: [] as ChildApplicationView[],
     invitedSchoolClassID: 0,
@@ -81,6 +88,9 @@ Page({
     void this.loadApplicationData()
   },
   async loadApplicationData() {
+    return applicationLoadGuard.run(() => this.loadApplicationDataInternal())
+  },
+  async loadApplicationDataInternal() {
     this.setData({ loading: true })
     try {
       const [me, applications] = await Promise.all([getParentMe(), getParentChildApplications()])
@@ -95,8 +105,10 @@ Page({
     catch (error) {
       if (isRequestError(error) && error.code === 'UNAUTHORIZED') {
         this.handleAuthExpired()
+        applicationLoadGuard.markDirty()
         return
       }
+      applicationLoadGuard.markDirty()
       this.showToast(error instanceof Error ? error.message : '申请信息加载失败，请重试')
     }
     finally {
@@ -131,10 +143,21 @@ Page({
     }
   },
   async handleSubmitApplication() {
+    if (this.data.submitting) {
+      return
+    }
     const childName = this.data.childName.trim()
-    const guardianPhone = this.data.guardianPhone.trim()
+    const guardianPhone = normalizePhone(this.data.guardianPhone.trim())
     if (!childName) {
       this.showToast('请填写孩子姓名')
+      return
+    }
+    if (!guardianPhone) {
+      this.showToast('请填写家长手机号')
+      return
+    }
+    if (guardianPhone.length < 7) {
+      this.showToast('请输入有效的家长手机号')
       return
     }
     if (this.data.inviteToken && !this.data.invitedSchoolClassID) {
@@ -147,15 +170,7 @@ Page({
       && this.data.classText.trim() === this.data.editingOriginalClassText,
     )
     const schoolClassID = this.data.invitedSchoolClassID || (retainsExistingClass ? this.data.editingSchoolClassID : 0)
-    if (!schoolClassID && !this.data.schoolName.trim()) {
-      this.showToast('请填写孩子所在学校')
-      return
-    }
-    if (!schoolClassID && !this.data.classText.trim()) {
-      this.showToast('请填写孩子年级')
-      return
-    }
-    this.setData({ loading: true })
+    this.setData({ submitting: true })
     try {
       const payload = {
         student_name: childName,
@@ -164,7 +179,7 @@ Page({
         ...(schoolClassID ? { school_class_id: schoolClassID } : {}),
         ...(this.data.inviteToken ? { invite_token: this.data.inviteToken } : {}),
         guardian_name: this.data.guardianName.trim(),
-        ...(guardianPhone ? { guardian_phone: guardianPhone } : {}),
+        guardian_phone: guardianPhone,
         relationship: this.data.relationship.trim() || '家长',
         notes: this.data.applicationNotes.trim(),
       }
@@ -184,7 +199,7 @@ Page({
         schoolName: '',
         classText: '',
         guardianName: '',
-        guardianPhone: getStoredPhoneLoginPhone(),
+        guardianPhone,
         relationship: '',
         optionalVisible: false,
         applicationNotes: '',
@@ -193,6 +208,7 @@ Page({
       if (this.data.inviteToken) {
         clearPendingClassInviteToken()
       }
+      applicationLoadGuard.markDirty()
       await this.loadApplicationData()
     }
     catch (error) {
@@ -203,7 +219,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '绑定申请提交失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ submitting: false })
     }
   },
   handleResubmitApplication(event: WechatMiniprogram.TouchEvent) {
@@ -232,6 +248,7 @@ Page({
     this.setData({ optionalVisible: !this.data.optionalVisible })
   },
   handleRefresh() {
+    applicationLoadGuard.markDirty()
     void this.loadApplicationData()
   },
   handleEnterParent() {

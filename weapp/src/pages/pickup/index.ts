@@ -83,6 +83,7 @@ Page({
   data: {
     date: getToday(),
     loading: false,
+    actionLoading: false,
     operations: [] as OperationCard[],
     assignments: [] as TeacherClassOption[],
     shareClassID: 0,
@@ -384,7 +385,7 @@ Page({
   },
   async handleFinish(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
-    if (!operationId || this.data.loading || this.data.closeCheckOperationId === operationId) {
+    if (!operationId || this.data.loading || this.data.actionLoading || this.data.closeCheckOperationId === operationId) {
       return
     }
     const operation = this.data.operations.find(item => item.id === operationId)
@@ -476,7 +477,7 @@ Page({
     this.chooseStudentPhoto(operationId, studentId)
   },
   chooseStudentPhoto(operationId: number, studentId: number) {
-    if (!operationId || !studentId || this.data.loading) {
+    if (!operationId || !studentId || this.data.loading || this.data.actionLoading) {
       return
     }
     if (typeof wx === 'undefined') {
@@ -496,10 +497,10 @@ Page({
     })
   },
   async uploadAndCheckIn(operationId: number, studentId: number, filePath: string) {
-    if (this.data.loading) {
+    if (this.data.actionLoading) {
       return
     }
-    this.setData({ loading: true })
+    this.setData({ actionLoading: true })
     try {
       const photoURL = await uploadPickupPhoto(filePath, { operation_id: operationId })
       await markPickupStudent(operationId, studentId, 'picked_up', photoURL)
@@ -510,7 +511,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '签到失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ actionLoading: false })
     }
   },
   handleBulkSelectionChange(event: WechatMiniprogram.CheckboxGroupChange) {
@@ -554,7 +555,7 @@ Page({
   async handleBulkArrive(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
     const operation = this.data.operations.find(item => item.id === operationId)
-    if (!operation || this.data.loading) {
+    if (!operation || this.data.loading || this.data.actionLoading) {
       return
     }
     const prefix = `${operationId}:`
@@ -639,7 +640,7 @@ Page({
   },
   async openHandover(operationId: number) {
     const operation = this.data.operations.find(item => item.id === operationId)
-    if (!operation || operation.status !== 'started' || this.data.loading || typeof wx === 'undefined') {
+    if (!operation || operation.status !== 'started' || this.data.loading || this.data.actionLoading || typeof wx === 'undefined') {
       return
     }
     try {
@@ -709,7 +710,7 @@ Page({
   handleTaskMoreActions(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
     const operation = this.data.operations.find(item => item.id === operationId)
-    if (!operation || (operation.status !== 'confirmed' && operation.status !== 'started') || this.data.loading || typeof wx === 'undefined') {
+    if (!operation || (operation.status !== 'confirmed' && operation.status !== 'started') || this.data.loading || this.data.actionLoading || typeof wx === 'undefined') {
       return
     }
     const actions = operation.status === 'confirmed'
@@ -744,7 +745,7 @@ Page({
     const studentId = Number(event.currentTarget.dataset.studentId)
     const operation = this.data.operations.find(item => item.id === operationId)
     const student = operation?.students.find(item => item.student_id === studentId)
-    if (!operation || !student || operation.status !== 'started' || this.data.loading || typeof wx === 'undefined') {
+    if (!operation || !student || operation.status !== 'started' || this.data.loading || this.data.actionLoading || typeof wx === 'undefined') {
       return
     }
     const actions: Array<{ label: string, status?: Exclude<PickupMemberStatus, 'planned'>, photo?: boolean }> = student.status === 'planned'
@@ -789,7 +790,7 @@ Page({
     this.handleStudentStatus(operationId, studentId, status)
   },
   handleStudentStatus(operationId: number, studentId: number, status: Exclude<PickupMemberStatus, 'planned'>) {
-    if (!operationId || !studentId || this.data.loading) {
+    if (!operationId || !studentId || this.data.loading || this.data.actionLoading) {
       return
     }
     if (status === 'leave' && typeof wx !== 'undefined') {
@@ -830,7 +831,10 @@ Page({
       this.showToast('接送任务已刷新，请重试')
       return
     }
-    this.setData({ loading: true })
+    if (this.data.actionLoading) {
+      return
+    }
+    this.setData({ actionLoading: true })
     try {
       await createTeacherLeaveRequest({ student_id: studentId, leave_date: operation.operation_date, reason })
       await markPickupStudent(operationId, studentId, 'leave', '', reason)
@@ -841,14 +845,14 @@ Page({
       this.showToast(error instanceof Error ? error.message : '口头请假登记失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ actionLoading: false })
     }
   },
   async markStudent(operationId: number, studentId: number, status: Exclude<PickupMemberStatus, 'planned'>, photoUrl = '', note = '') {
-    if (this.data.loading) {
+    if (this.data.actionLoading) {
       return
     }
-    this.setData({ loading: true })
+    this.setData({ actionLoading: true })
     try {
       await markPickupStudent(operationId, studentId, status, photoUrl, note)
       this.showToast(`已登记：${pickupStatusLabel(status)}`)
@@ -858,13 +862,13 @@ Page({
       this.showToast(error instanceof Error ? error.message : '登记失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ actionLoading: false })
     }
   },
   async handleCorrectStatus(event: WechatMiniprogram.TouchEvent) {
     const operationId = Number(event.currentTarget.dataset.operationId)
     const studentId = Number(event.currentTarget.dataset.studentId)
-    if (!operationId || !studentId || this.data.loading || typeof wx === 'undefined') {
+    if (!operationId || !studentId || this.data.loading || this.data.actionLoading || typeof wx === 'undefined') {
       return
     }
     try {
@@ -963,10 +967,10 @@ Page({
     })
   },
   async runOperationAction<T>(action: () => Promise<T>, message: string) {
-    if (this.data.loading) {
+    if (this.data.actionLoading) {
       return
     }
-    this.setData({ loading: true })
+    this.setData({ actionLoading: true })
     try {
       await action()
       this.showToast(message)
@@ -976,7 +980,7 @@ Page({
       this.showToast(error instanceof Error ? error.message : '操作失败')
     }
     finally {
-      this.setData({ loading: false })
+      this.setData({ actionLoading: false })
     }
   },
   showToast(message: string) {

@@ -83,30 +83,13 @@ async function loadAll() {
   loading.value = true;
   loadError.value = '';
   try {
-    const [
-      overviewResult,
-      organizationResult,
-      inviteResult,
-      registrationResult,
-      adminResult,
-    ] = await Promise.all([
-      getPlatformOverviewApi(),
-      getPlatformOrganizationsApi({
-        keyword: organizationKeyword.value || undefined,
-        status: organizationStatus.value,
-      }),
-      getPlatformInvitesApi(inviteStatus.value),
-      getPlatformRegistrationsApi(registrationStatus.value),
-      getPlatformAdminsApi({
-        keyword: adminKeyword.value || undefined,
-        status: adminStatus.value,
-      }),
+    await Promise.all([
+      loadOverview(),
+      loadOrganizations(),
+      loadInvites(),
+      loadRegistrations(),
+      loadPlatformAdmins(),
     ]);
-    overview.value = overviewResult;
-    organizations.value = organizationResult.items;
-    invites.value = inviteResult.items;
-    registrations.value = registrationResult.items;
-    platformAdmins.value = adminResult.items;
   } catch {
     loadError.value = '平台数据加载失败，请检查平台管理员权限和后端连接。';
   } finally {
@@ -114,24 +97,62 @@ async function loadAll() {
   }
 }
 
+async function loadOverview() {
+  overview.value = await getPlatformOverviewApi();
+}
+
+async function loadOrganizations() {
+  const result = await getPlatformOrganizationsApi({
+    keyword: organizationKeyword.value || undefined,
+    status: organizationStatus.value,
+  });
+  organizations.value = result.items;
+}
+
+async function loadInvites() {
+  const result = await getPlatformInvitesApi(inviteStatus.value);
+  invites.value = result.items;
+}
+
+async function loadRegistrations() {
+  const result = await getPlatformRegistrationsApi(registrationStatus.value);
+  registrations.value = result.items;
+}
+
+async function loadPlatformAdmins() {
+  const result = await getPlatformAdminsApi({
+    keyword: adminKeyword.value || undefined,
+    status: adminStatus.value,
+  });
+  platformAdmins.value = result.items;
+}
+
 function searchOrganizations() {
-  void loadAll();
+  void loadOrganizations().catch(() => {
+    loadError.value = '机构列表加载失败，请稍后重试。';
+  });
 }
 
 function resetOrganizationSearch() {
   organizationKeyword.value = '';
   organizationStatus.value = '';
-  void loadAll();
+  void loadOrganizations().catch(() => {
+    loadError.value = '机构列表加载失败，请稍后重试。';
+  });
 }
 
 function searchPlatformAdmins() {
-  void loadAll();
+  void loadPlatformAdmins().catch(() => {
+    loadError.value = '平台管理员列表加载失败，请稍后重试。';
+  });
 }
 
 function resetPlatformAdminSearch() {
   adminKeyword.value = '';
   adminStatus.value = '';
-  void loadAll();
+  void loadPlatformAdmins().catch(() => {
+    loadError.value = '平台管理员列表加载失败，请稍后重试。';
+  });
 }
 
 function openInviteDialog() {
@@ -171,7 +192,7 @@ async function submitInvite() {
       '邀请码已生成',
       { dangerouslyUseHTMLString: true, confirmButtonText: '我已保存' },
     );
-    await loadAll();
+    await Promise.all([loadOverview(), loadInvites()]);
   } finally {
     submittingInvite.value = false;
   }
@@ -190,7 +211,7 @@ async function revokeInvite(item: PlatformApi.Invite) {
     );
     await revokePlatformInviteApi(item.id);
     ElMessage.success('邀请码已撤销');
-    await loadAll();
+    await Promise.all([loadOverview(), loadInvites()]);
   } catch {
     // 用户取消或接口失败由请求拦截器提示。
   }
@@ -206,7 +227,7 @@ async function toggleOrganization(item: PlatformApi.Organization) {
     );
     await setPlatformOrganizationStatusApi(item.id, nextStatus);
     ElMessage.success('机构状态已更新');
-    await loadAll();
+    await Promise.all([loadOverview(), loadOrganizations()]);
   } catch {
     // 用户取消或接口失败由请求拦截器提示。
   }
@@ -229,7 +250,7 @@ async function submitAuthorization() {
     ElMessage.success(
       authorizationForm.authorizedUntil ? '服务期限已更新' : '服务期限已清除',
     );
-    await loadAll();
+    await Promise.all([loadOverview(), loadOrganizations()]);
   } catch {
     // 接口错误由请求拦截器提示。
   }
@@ -286,7 +307,7 @@ async function submitAdmin() {
       ElMessage.success('平台管理员信息已更新');
     }
     adminDialogVisible.value = false;
-    await loadAll();
+    await Promise.all([loadPlatformAdmins()]);
   } finally {
     submittingAdmin.value = false;
   }
@@ -302,7 +323,7 @@ async function togglePlatformAdmin(item: PlatformApi.PlatformAdmin) {
     );
     await setPlatformAdminStatusApi(item.id, nextStatus);
     ElMessage.success('平台管理员状态已更新');
-    await loadAll();
+    await Promise.all([loadPlatformAdmins()]);
   } catch {
     // 用户取消或接口失败由请求拦截器提示。
   }
@@ -331,7 +352,11 @@ async function reviewRegistration(
       status,
     });
     ElMessage.success(`申请已${action}`);
-    await loadAll();
+    await Promise.all([
+      loadOverview(),
+      loadRegistrations(),
+      loadOrganizations(),
+    ]);
   } catch {
     // 用户取消或接口失败由请求拦截器提示。
   }

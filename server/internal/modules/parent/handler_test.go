@@ -722,6 +722,32 @@ func TestAdminCanApproveMinimalChildApplicationByCreatingFallbackClass(t *testin
 	}
 }
 
+func TestChildApplicationAllowsMissingClassDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	parents := NewMemoryStore()
+	parentAccount, err := parents.CreateAccount(ctx, masterdata.DefaultOrganizationID, CreateAccountParams{OpenID: "parent-no-class-details", Nickname: "家长"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(parents, masterdata.NewMemoryStore(), pickup.NewMemoryStore())
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	created := parentRequest(t, router, http.MethodPost, "/api/v1/parent/child-applications", `{"student_name":"小雨","guardian_phone":"138 0000 0000","relationship":"妈妈"}`, parentAccount.OpenID)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create class-less application status = %d: %s", created.Code, created.Body.String())
+	}
+	var application childApplicationView
+	decodeParentData(t, created, &application)
+	if application.Status != ChildApplicationStatusPending || application.SchoolID != nil || application.SchoolClassID != nil {
+		t.Fatalf("class-less application = %+v", application)
+	}
+	if application.GuardianPhone != "13800000000" {
+		t.Fatalf("normalized guardian phone = %q", application.GuardianPhone)
+	}
+}
+
 func TestSameNameApplicationReturnsCandidatesAndRequiresSelection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.Background()

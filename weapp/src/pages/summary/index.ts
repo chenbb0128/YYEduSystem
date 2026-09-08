@@ -5,6 +5,9 @@ import { getStudents } from '@/services/master-data'
 import { getToday } from '@/services/pickup'
 import { closeDailySummary, correctDailySummary, generateDailySummary, getDailySummaries, getDailySummaryVersions, publishDailySummary, updateDailySummary, withdrawDailySummary } from '@/services/summary'
 import { showFeedback } from '@/utils/feedback'
+import { createLoadGuard } from '@/utils/load-guard'
+
+const summaryLoadGuard = createLoadGuard()
 
 Page({
   data: {
@@ -28,7 +31,10 @@ Page({
   onShow() {
     void this.load()
   },
-  async load() {
+  async load(force = false) {
+    return summaryLoadGuard.run(() => this.loadInternal(), { force })
+  },
+  async loadInternal() {
     this.setData({ loading: true })
     try {
       const [result, studentResult] = await Promise.all([getDailySummaries(this.data.date), getStudents()])
@@ -44,6 +50,7 @@ Page({
       this.setData({ summary, content: summary?.content || '', students: studentResult.items, childUpdates, childUpdateItems: this.toChildUpdateItems(childUpdates, studentResult.items), versions, correctionVisible: false, correctionChildUpdates: childUpdates })
     }
     catch (error) {
+      summaryLoadGuard.markDirty()
       this.showToast(error instanceof Error ? error.message : '每日总结加载失败')
     }
     finally {
@@ -52,7 +59,7 @@ Page({
   },
   handleDateChange(event: WechatMiniprogram.PickerChange) {
     this.setData({ date: event.detail.value as string })
-    void this.load()
+    void this.load(true)
   },
   handleInput(event: WechatMiniprogram.Input) {
     this.setData({ content: event.detail.value })

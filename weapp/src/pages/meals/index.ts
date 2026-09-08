@@ -5,6 +5,7 @@ import { getStudents } from '@/services/master-data'
 import { copyMeal, getDietNoteChangeRequests, getDietNotes, getMeals, mealPhotoURL, reviewDietNoteChangeRequest, uploadMealPhoto, upsertMeal } from '@/services/meal'
 import { getToday } from '@/services/pickup'
 import { showFeedback } from '@/utils/feedback'
+import { createLoadGuard } from '@/utils/load-guard'
 
 type MealView = MealPlan & { photo_url_signed: string }
 interface DietNoteView { student_id: number, student_name: string, note: string, updated_at: string }
@@ -51,6 +52,8 @@ function buildWeekMenu(date: string, plans: MealPlan[]): WeekMenuView[] {
   })
 }
 
+const mealLoadGuard = createLoadGuard()
+
 Page({
   data: {
     loading: false,
@@ -74,7 +77,10 @@ Page({
   onShow() {
     void this.loadPlans()
   },
-  async loadPlans() {
+  async loadPlans(force = false) {
+    return mealLoadGuard.run(() => this.loadPlansInternal(), { force })
+  },
+  async loadPlansInternal() {
     this.setData({ loading: true })
     try {
       const start = weekStart(this.data.date)
@@ -95,6 +101,7 @@ Page({
       })
     }
     catch (error) {
+      mealLoadGuard.markDirty()
       this.setData({ plans: [], weekMenu: [], historyPlans: [], dietNotes: [], dietNoteRequests: [] })
       this.showToast(error instanceof Error ? error.message : '餐食加载失败')
     }
@@ -104,7 +111,7 @@ Page({
   },
   handleDateChange(event: WechatMiniprogram.PickerChange) {
     this.setData({ date: event.detail.value as string })
-    void this.loadPlans()
+    void this.loadPlans(true)
   },
   handleWeekMenuSelect(event: WechatMiniprogram.TouchEvent) {
     const date = String(event.currentTarget.dataset.date || '')
@@ -112,7 +119,7 @@ Page({
       return
     }
     this.setData({ date })
-    void this.loadPlans()
+    void this.loadPlans(true)
   },
   openEditor() {
     const current = this.data.plans[0]
@@ -181,7 +188,8 @@ Page({
       })
       this.showToast('餐食已保存')
       this.closeEditor()
-      await this.loadPlans()
+      mealLoadGuard.markDirty()
+      await this.loadPlans(true)
     }
     catch (error) {
       this.showToast(error instanceof Error ? error.message : '餐食保存失败')
@@ -199,7 +207,8 @@ Page({
     try {
       await copyMeal({ source_date: source, target_date: this.data.date })
       this.showToast('历史菜单已复制')
-      await this.loadPlans()
+      mealLoadGuard.markDirty()
+      await this.loadPlans(true)
     }
     catch (error) {
       this.showToast(error instanceof Error ? error.message : '复制菜单失败')
@@ -232,7 +241,8 @@ Page({
     try {
       await reviewDietNoteChangeRequest(requestID, { status, review_note: reviewNote })
       this.showToast(status === 'approved' ? '饮食备注已确认生效' : '申请已驳回')
-      await this.loadPlans()
+      mealLoadGuard.markDirty()
+      await this.loadPlans(true)
     }
     catch (error) {
       this.showToast(error instanceof Error ? error.message : '审核失败，请刷新后重试')

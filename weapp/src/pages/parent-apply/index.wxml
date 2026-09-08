@@ -47,7 +47,7 @@
   <view wx:if="{{hasBoundChild || !applications.length || applications[0].status !== 'pending' || editingApplicationID}}" class="first-entry-form-card">
     <view class="first-entry-form-heading">
       <view><view class="first-entry-form-kicker">{{editingApplicationID ? '修改申请' : hasBoundChild ? '继续添加' : '第一次使用'}}</view><view class="first-entry-form-title">填写必要信息</view></view>
-      <view class="first-entry-form-count">{{isInvited ? '1 项' : '2 项'}}</view>
+      <view class="first-entry-form-count">{{isInvited ? '孩子 + 家长' : '孩子 + 联系方式'}}</view>
     </view>
 
     <view class="first-entry-field">
@@ -67,13 +67,14 @@
       </view>
     </block>
 
+    <view class="first-entry-field"><text class="first-entry-label">家长手机号</text><view class="field-control first-entry-control"><input class="field-input" type="number" maxlength="32" placeholder="用于老师联系和接送提醒" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
+
     <view class="first-entry-optional-toggle" bind:tap="toggleOptionalInfo">{{optionalVisible ? '收起补充说明' : '补充说明（可选）'}} <text>{{optionalVisible ? '⌃' : '⌄'}}</text></view>
     <view wx:if="{{optionalVisible}}" class="first-entry-optional-field">
-      <view class="first-entry-optional-phone"><text class="first-entry-label">家长手机号（可选）</text><view class="field-control first-entry-control"><input class="field-input" type="number" maxlength="32" placeholder="用于老师联系和接送提醒" data-field="guardianPhone" value="{{guardianPhone}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" /></view></view>
       <textarea class="field-textarea" maxlength="500" placeholder="例如：接送人、过敏情况或其他需要老师知道的事项" data-field="applicationNotes" value="{{applicationNotes}}" bindinput="handleInput" bindfocus="handleFocus" bindblur="handleBlur" />
     </view>
 
-    <view class="first-entry-submit"><t-button block theme="primary" loading="{{loading}}" bind:tap="handleSubmitApplication">{{editingApplicationID ? '重新提交审核' : '提交申请'}}</t-button></view>
+    <view class="first-entry-submit"><t-button block theme="primary" loading="{{submitting}}" bind:tap="handleSubmitApplication">{{editingApplicationID ? '重新提交审核' : '提交申请'}}</t-button></view>
   </view>
 
   <view wx:if="{{applications.length && (hasBoundChild || applications.length > 1 || applications[0].status !== 'pending')}}" class="first-entry-history content-card">

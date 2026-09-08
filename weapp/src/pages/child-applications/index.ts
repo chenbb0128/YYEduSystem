@@ -5,6 +5,7 @@ import { getSchoolClasses, getSchools } from '@/services/master-data'
 import { isRequestError } from '@/services/request'
 import { getTeacherAssignments } from '@/services/teacher-assignments'
 import { showFeedback } from '@/utils/feedback'
+import { createLoadGuard } from '@/utils/load-guard'
 
 type ClassOption = SchoolClassRecord & { school_name: string }
 type ApplicationCard = ChildApplication & { approve_action_label: string, class_auto_note: string, status_label: string, system_label: string }
@@ -67,6 +68,8 @@ function buildApproveActionLabel(application: ChildApplication) {
   return '通过审核'
 }
 
+const applicationLoadGuard = createLoadGuard()
+
 Page({
   data: {
     loading: false,
@@ -80,6 +83,9 @@ Page({
     void this.loadApplications()
   },
   async loadApplications() {
+    return applicationLoadGuard.run(() => this.loadApplicationsInternal())
+  },
+  async loadApplicationsInternal() {
     this.setData({ loading: true })
     try {
       const [result, schools, classes, assignments] = await Promise.all([getStaffChildApplications(), getSchools(), getSchoolClasses(), getTeacherAssignments()])
@@ -104,6 +110,7 @@ Page({
       })
     }
     catch (error) {
+      applicationLoadGuard.markDirty()
       this.showToast(error instanceof Error ? error.message : '家长申请加载失败')
     }
     finally {
@@ -244,6 +251,7 @@ Page({
     try {
       await reviewChildApplication(applicationID, data)
       this.showToast(message)
+      applicationLoadGuard.markDirty()
       await this.loadApplications()
     }
     catch (error) {
