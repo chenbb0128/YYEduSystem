@@ -1390,6 +1390,13 @@ func (h *Handler) reviewChildApplication(c *gin.Context) {
 			return
 		}
 	}
+	// A successful approval may be followed by a client timeout or a lost
+	// response. Treat a repeated approval as a safe retry instead of asking the
+	// caller to recover an already-created student and binding manually.
+	if application.Status == ChildApplicationStatusApproved && req.Status == ChildApplicationStatusApproved {
+		response.OK(c, toChildApplicationView(application, true))
+		return
+	}
 	if req.Status != ChildApplicationStatusApproved {
 		item, reviewErr := h.store.ReviewChildApplication(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), ReviewChildApplicationParams{ID: id, Status: req.Status, StudentID: application.StudentID, SchoolID: application.SchoolID, SchoolClassID: application.SchoolClassID, ReviewNote: strings.TrimSpace(req.ReviewNote), ReviewedByUserID: principal.SubjectID})
 		if reviewErr != nil {

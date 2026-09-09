@@ -810,6 +810,56 @@ func TestSameNameApplicationReturnsCandidatesAndRequiresSelection(t *testing.T) 
 	}
 }
 
+func TestApprovedChildApplicationReviewIsIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+
+	master := masterdata.NewMemoryStore()
+	school, err := master.CreateSchool(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolParams{Name: "实验小学"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	term, err := master.CreateAcademicTerm(ctx, masterdata.DefaultOrganizationID, masterdata.CreateAcademicTermParams{Name: "2026 秋季", IsCurrent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schoolClass, err := master.CreateSchoolClass(ctx, masterdata.DefaultOrganizationID, masterdata.CreateSchoolClassParams{SchoolID: school.ID, TermID: term.ID, Grade: "一年级", Name: "1班"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parents := NewMemoryStore()
+	parentAccount, err := parents.CreateAccount(ctx, masterdata.DefaultOrganizationID, CreateAccountParams{OpenID: "parent-idempotent-review", Nickname: "家长"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(parents, master, pickup.NewMemoryStore())
+	router := gin.New()
+	handler.RegisterRoutes(router.Group("/api/v1"))
+
+	created := parentRequest(t, router, http.MethodPost, "/api/v1/parent/child-applications", fmt.Sprintf(`{"student_name":"陈青","school_class_id":%d,"guardian_phone":"13800000000"}`, schoolClass.ID), parentAccount.OpenID)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create application status = %d: %s", created.Code, created.Body.String())
+	}
+	var application childApplicationView
+	decodeParentData(t, created, &application)
+
+	admin := identity.Principal{Kind: identity.PrincipalKindUser, SubjectID: 1, Role: identity.UserRoleAdmin}
+	path := fmt.Sprintf("/api/v1/child-applications/%d/review", application.ID)
+	first := parentRequestAs(t, router, admin, http.MethodPost, path, `{"status":"approved"}`)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first review status = %d: %s", first.Code, first.Body.String())
+	}
+	second := parentRequestAs(t, router, admin, http.MethodPost, path, `{"status":"approved"}`)
+	if second.Code != http.StatusOK {
+		t.Fatalf("idempotent review status = %d: %s", second.Code, second.Body.String())
+	}
+	decodeParentData(t, second, &application)
+	if application.Status != ChildApplicationStatusApproved || application.StudentID == nil {
+		t.Fatalf("idempotent review application = %+v", application)
+	}
+}
+
 func TestParseClassTextNormalizesCommonParentInput(t *testing.T) {
 	tests := []struct {
 		input, grade, className string

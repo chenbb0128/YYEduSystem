@@ -2,7 +2,6 @@
 import type {
   ChildApplicationRecord,
   ChildApplicationStatus,
-  ReviewChildApplicationPayload,
 } from '#/api/child-applications';
 import type { SchoolClassRecord } from '#/api/master-data';
 import type { TeacherAssignmentRecord } from '#/api/teacher-assignments';
@@ -36,6 +35,10 @@ import {
 } from '#/api/child-applications';
 import { getSchoolClassesApi } from '#/api/master-data';
 import { getTeacherAssignmentsApi } from '#/api/teacher-assignments';
+import {
+  extractReviewErrorMessage,
+  submitChildApplicationReview,
+} from '#/utils/child-application-review';
 
 defineOptions({ name: 'ChildApplications' });
 
@@ -250,15 +253,6 @@ function closeReview() {
   selectedApplication.value = null;
 }
 
-async function refreshApplicationBeforeReview(applicationID: number) {
-  const latestPage = await getChildApplicationsApi();
-  const latestApplications = safeItems(latestPage).map((item) =>
-    normalizeApplication(item),
-  );
-  applications.value = latestApplications;
-  return latestApplications.find((item) => item.id === applicationID);
-}
-
 function isNotFoundError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const response = Reflect.get(error, 'response') as
@@ -268,7 +262,7 @@ function isNotFoundError(error: unknown) {
 }
 
 async function submitReview() {
-  let application = selectedApplication.value;
+  const application = selectedApplication.value;
   if (!application) return;
 
   if (
@@ -305,39 +299,15 @@ async function submitReview() {
 
   submitting.value = true;
   try {
-    const latestApplication = await refreshApplicationBeforeReview(
-      application.id,
-    );
-    if (!latestApplication) {
-      closeReview();
-      ElMessage.warning(
-        '这条申请已不存在，已为你刷新列表。请让家长重新提交后再审核。',
-      );
-      return;
-    }
-    if (!isActionable(latestApplication.status)) {
-      closeReview();
-      ElMessage.info('这条申请已经处理过，列表已更新。');
-      return;
-    }
-    application = latestApplication;
-    selectedApplication.value = latestApplication;
-
-    const payload: ReviewChildApplicationPayload = {
-      review_note: reviewForm.review_note.trim() || undefined,
+    await submitChildApplicationReview({
+      applicationId: application.id,
+      createSchoolClass: reviewForm.create_school_class,
+      review: reviewChildApplicationApi,
+      reviewNote: reviewForm.review_note,
+      schoolClassId: reviewForm.school_class_id,
       status: reviewForm.status,
-    };
-    if (reviewForm.status === 'approved') {
-      if (reviewForm.school_class_id) {
-        payload.school_class_id = reviewForm.school_class_id;
-      }
-      if (reviewForm.student_id) {
-        payload.student_id = reviewForm.student_id;
-      }
-      payload.create_school_class = reviewForm.create_school_class;
-    }
-
-    await reviewChildApplicationApi(application.id, payload);
+      studentId: reviewForm.student_id,
+    });
     ElMessage.success(`已${actionLabel}家长入班申请`);
     closeReview();
     await loadData();
@@ -350,9 +320,7 @@ async function submitReview() {
       );
       return;
     }
-    ElMessage.error(
-      error instanceof Error ? error.message : '家长入班申请审核失败',
-    );
+    ElMessage.error(extractReviewErrorMessage(error));
   } finally {
     submitting.value = false;
   }
