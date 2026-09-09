@@ -31,10 +31,16 @@ func (s *MemoryStore) newID() uint64 {
 	return id
 }
 
-func (s *MemoryStore) ListSchools(context.Context, uint64) ([]School, error) {
+func (s *MemoryStore) ListSchools(_ context.Context, orgID uint64) ([]School, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.schools), nil
+	out := make([]School, 0, len(s.schools))
+	for _, item := range s.schools {
+		if item.OrganizationID == orgID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) CreateSchool(_ context.Context, orgID uint64, params CreateSchoolParams) (School, error) {
@@ -51,10 +57,16 @@ func (s *MemoryStore) CreateSchool(_ context.Context, orgID uint64, params Creat
 	return item, nil
 }
 
-func (s *MemoryStore) ListAcademicTerms(context.Context, uint64) ([]AcademicTerm, error) {
+func (s *MemoryStore) ListAcademicTerms(_ context.Context, orgID uint64) ([]AcademicTerm, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.terms), nil
+	out := make([]AcademicTerm, 0, len(s.terms))
+	for _, item := range s.terms {
+		if item.OrganizationID == orgID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) CreateAcademicTerm(_ context.Context, orgID uint64, params CreateAcademicTermParams) (AcademicTerm, error) {
@@ -69,17 +81,25 @@ func (s *MemoryStore) CreateAcademicTerm(_ context.Context, orgID uint64, params
 	item := AcademicTerm{ID: s.newID(), OrganizationID: orgID, Name: params.Name, StartsOn: params.StartsOn, EndsOn: params.EndsOn, IsCurrent: params.IsCurrent, Status: "active", CreatedAt: now, UpdatedAt: now}
 	if item.IsCurrent {
 		for index := range s.terms {
-			s.terms[index].IsCurrent = false
+			if s.terms[index].OrganizationID == orgID {
+				s.terms[index].IsCurrent = false
+			}
 		}
 	}
 	s.terms = append(s.terms, item)
 	return item, nil
 }
 
-func (s *MemoryStore) ListSchoolClasses(context.Context, uint64) ([]SchoolClass, error) {
+func (s *MemoryStore) ListSchoolClasses(_ context.Context, orgID uint64) ([]SchoolClass, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.schoolClasses), nil
+	out := make([]SchoolClass, 0, len(s.schoolClasses))
+	for _, item := range s.schoolClasses {
+		if item.OrganizationID == orgID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) CreateSchoolClass(_ context.Context, orgID uint64, params CreateSchoolClassParams) (SchoolClass, error) {
@@ -96,10 +116,16 @@ func (s *MemoryStore) CreateSchoolClass(_ context.Context, orgID uint64, params 
 	return item, nil
 }
 
-func (s *MemoryStore) ListCareClasses(context.Context, uint64) ([]CareClass, error) {
+func (s *MemoryStore) ListCareClasses(_ context.Context, orgID uint64) ([]CareClass, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.careClasses), nil
+	out := make([]CareClass, 0, len(s.careClasses))
+	for _, item := range s.careClasses {
+		if item.OrganizationID == orgID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) CreateCareClass(_ context.Context, orgID uint64, params CreateCareClassParams) (CareClass, error) {
@@ -116,10 +142,16 @@ func (s *MemoryStore) CreateCareClass(_ context.Context, orgID uint64, params Cr
 	return item, nil
 }
 
-func (s *MemoryStore) ListStudents(context.Context, uint64) ([]Student, error) {
+func (s *MemoryStore) ListStudents(_ context.Context, orgID uint64) ([]Student, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.students), nil
+	out := make([]Student, 0, len(s.students))
+	for _, item := range s.students {
+		if item.OrganizationID == orgID {
+			out = append(out, item)
+		}
+	}
+	return out, nil
 }
 
 func (s *MemoryStore) CreateStudent(_ context.Context, orgID uint64, params CreateStudentParams) (Student, error) {

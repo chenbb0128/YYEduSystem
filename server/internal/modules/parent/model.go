@@ -42,6 +42,14 @@ type Account struct {
 	UpdatedAt      time.Time
 }
 
+type OrganizationSummary struct {
+	ID      uint64
+	Name    string
+	Slug    string
+	Status  string
+	Current bool
+}
+
 type PrivacyConsent struct {
 	ID              uint64
 	OrganizationID  uint64

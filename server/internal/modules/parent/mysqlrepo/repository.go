@@ -49,6 +49,18 @@ func (r *Repository) FindAccountByOpenID(ctx context.Context, orgID uint64, open
 	return mapAccount(item), nil
 }
 
+func (r *Repository) ListAccountsByOpenID(ctx context.Context, openID string) ([]parent.Account, error) {
+	items, err := r.queries.ListParentAccountsByOpenID(ctx, strings.TrimSpace(openID))
+	if err != nil {
+		return nil, translateError(err)
+	}
+	out := make([]parent.Account, 0, len(items))
+	for _, item := range items {
+		out = append(out, mapAccount(item))
+	}
+	return out, nil
+}
+
 func (r *Repository) GetLatestPrivacyConsent(ctx context.Context, orgID, parentID uint64) (parent.PrivacyConsent, error) {
 	item, err := r.queries.GetLatestParentPrivacyConsent(ctx, sqlc.GetLatestParentPrivacyConsentParams{OrganizationID: orgID, ParentAccountID: parentID})
 	if err != nil {

@@ -2,6 +2,8 @@ import { request } from '@/services/request'
 
 export interface ClassInviteView {
   token: string
+  organization_id: number
+  organization_name?: string
   school_class_id: number
   school_name: string
   grade: string
@@ -29,6 +31,14 @@ export function getClassInviteQRCode(schoolClassID: number) {
     method: 'GET',
     url: '/class-invites/qrcode',
     params: { school_class_id: schoolClassID },
+    responseType: 'arraybuffer',
+  })
+}
+
+export function getOrganizationInviteQRCode() {
+  return request<ArrayBuffer>({
+    method: 'GET',
+    url: '/organization-invites/qrcode',
     responseType: 'arraybuffer',
   })
 }

@@ -1,3 +1,4 @@
+import { getPendingClassInviteToken } from '@/services/class-invites'
 import { request } from '@/services/request'
 import { clearAuthStorage, getPrincipal, getRefreshToken, getStorage, setAccessToken, setPrincipal, setRefreshToken, setStorage } from '@/utils/storage'
 
@@ -62,6 +63,10 @@ async function saveLogin(result: AuthTokenResult) {
   return result
 }
 
+export function saveAuthToken(result: AuthTokenResult) {
+  return saveLogin(result)
+}
+
 export function loginTeacher(username: string, password: string) {
   return authRequest<AuthTokenResult>('/auth/login', { username, password }).then(saveLogin)
 }
@@ -92,8 +97,8 @@ export function savePhoneLoginRole(role: PhoneLoginRole) {
   return saveLogin(result)
 }
 
-export function loginParent(code: string, nickname = '', avatar = '', openid?: string) {
-  return authRequest<AuthTokenResult>('/auth/parent/wechat', { code, nickname, avatar, ...(openid ? { openid } : {}) }).then(saveLogin)
+export function loginParent(code: string, nickname = '', avatar = '', openid?: string, inviteToken = '') {
+  return authRequest<AuthTokenResult>('/auth/parent/wechat', { code, nickname, avatar, ...(openid ? { openid } : {}), ...(inviteToken ? { invite_token: inviteToken } : {}) }).then(saveLogin)
 }
 
 /** 正式环境使用 wx.login 返回的临时 code，由服务端 code2Session 换取 OpenID。 */
@@ -108,7 +113,7 @@ export function loginParentWithWeChat() {
           reject(new Error('微信登录没有返回有效凭证'))
           return
         }
-        loginParent(result.code).then(resolve).catch(reject)
+        loginParent(result.code, '', '', undefined, getPendingClassInviteToken()).then(resolve).catch(reject)
       },
       fail: error => reject(new Error(error.errMsg || '微信登录失败')),
     })

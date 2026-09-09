@@ -20,6 +20,7 @@ import (
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/identity"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/masterdata"
 	"github.com/chenbb0128/tuoguan-system-server/internal/modules/pickup"
+	platformadmin "github.com/chenbb0128/tuoguan-system-server/internal/modules/platformadmin"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/businessdate"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/storage"
 	"github.com/chenbb0128/tuoguan-system-server/internal/platform/verification"
@@ -51,7 +52,12 @@ type Handler struct {
 	miniProgramPage     string
 	miniProgramEnv      string
 	classInviteSecret   string
+	organizationStore   organizationStore
 	orgID               uint64
+}
+
+type organizationStore interface {
+	ListOrganizations(context.Context) ([]platformadmin.Organization, error)
 }
 
 type CodeExchanger interface {
@@ -100,6 +106,8 @@ func (h *Handler) SetClassInviteSecret(secret string) {
 	}
 }
 
+func (h *Handler) SetOrganizationStore(store organizationStore) { h.organizationStore = store }
+
 func (h *Handler) SetStaffScope(assignments assignment.Store) { h.assignments = assignments }
 
 func (h *Handler) SetUserStore(users identity.UserStore) { h.users = users }
@@ -136,6 +144,8 @@ func (h *Handler) RegisterParentRoutes(api *gin.RouterGroup) {
 	api.GET("/parent/child-applications", h.listParentChildApplications)
 	api.PUT("/parent/child-applications/:id", h.updateChildApplication)
 	api.GET("/parent/class-invites/:token", h.getClassInvite)
+	api.GET("/parent/organizations", h.listParentOrganizations)
+	api.POST("/parent/organizations/switch", h.switchParentOrganization)
 	api.GET("/parent/me", h.getMe)
 	api.GET("/parent/students", h.listStudents)
 	api.GET("/parent/students/:student_id/pickup-events", h.listStudentPickupEvents)
@@ -157,18 +167,21 @@ func (h *Handler) RegisterStaffRoutes(api *gin.RouterGroup) {
 	api.GET("/child-applications", h.listStaffChildApplications)
 	api.POST("/child-applications/:id/review", h.reviewChildApplication)
 	api.GET("/class-invites/qrcode", h.getClassInviteQRCode)
+	api.GET("/organization-invites/qrcode", h.getOrganizationInviteQRCode)
 	api.GET("/leave-requests", h.listAllLeaveRequests)
 	api.POST("/leave-requests/teacher", h.createTeacherLeaveRequest)
 	api.POST("/leave-requests/:id/review", h.reviewLeaveRequest)
 }
 
 type classInviteView struct {
-	Token         string `json:"token"`
-	SchoolClassID uint64 `json:"school_class_id"`
-	SchoolName    string `json:"school_name"`
-	Grade         string `json:"grade"`
-	ClassName     string `json:"class_name"`
-	Label         string `json:"label"`
+	Token            string `json:"token"`
+	OrganizationID   uint64 `json:"organization_id"`
+	OrganizationName string `json:"organization_name,omitempty"`
+	SchoolClassID    uint64 `json:"school_class_id"`
+	SchoolName       string `json:"school_name"`
+	Grade            string `json:"grade"`
+	ClassName        string `json:"class_name"`
+	Label            string `json:"label"`
 }
 
 func (h *Handler) getClassInviteQRCode(c *gin.Context) {
@@ -203,14 +216,52 @@ func (h *Handler) getClassInviteQRCode(c *gin.Context) {
 	c.Data(http.StatusOK, "image/png", image)
 }
 
+func (h *Handler) getOrganizationInviteQRCode(c *gin.Context) {
+	principal, ok := identity.PrincipalFromContext(c.Request.Context())
+	if !ok || principal.Kind != identity.PrincipalKindUser {
+		response.Error(c, response.Unauthorized())
+		return
+	}
+	if h.miniProgramCode == nil {
+		response.Error(c, response.DependencyUnavailable(errors.New("wechat mini-program code generator is not configured")))
+		return
+	}
+	organizationID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	if _, err := h.findOrganization(c.Request.Context(), organizationID); err != nil {
+		response.Error(c, response.BadRequest("当前机构不存在或已停用", err))
+		return
+	}
+	image, err := h.miniProgramCode.GenerateMiniProgramCode(c.Request.Context(), wechat.MiniProgramCodeParams{Scene: h.organizationInviteToken(organizationID), Page: h.miniProgramPage, EnvVersion: h.miniProgramEnv, Width: 430})
+	if err != nil {
+		response.Error(c, response.DependencyUnavailable(err))
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Data(http.StatusOK, "image/png", image)
+}
+
 func (h *Handler) getClassInvite(c *gin.Context) {
 	token := strings.TrimSpace(c.Param("token"))
-	schoolClassID, err := h.schoolClassIDFromInviteToken(c, token)
+	if strings.HasPrefix(token, "o") {
+		organizationID, err := h.organizationIDFromInviteToken(token)
+		if err != nil {
+			response.Error(c, response.BadRequest("机构邀请二维码无效或已失效", err))
+			return
+		}
+		organization, err := h.findOrganization(c.Request.Context(), organizationID)
+		if err != nil {
+			response.Error(c, response.BadRequest("机构不存在或暂未开放加入", err))
+			return
+		}
+		response.OK(c, classInviteView{Token: token, OrganizationID: organizationID, OrganizationName: organization.Name, Label: organization.Name + "机构邀请"})
+		return
+	}
+	organizationID, schoolClassID, err := h.classInviteTarget(token)
 	if err != nil {
 		response.Error(c, response.BadRequest("班级邀请二维码无效或已失效", err))
 		return
 	}
-	view, err := h.classInviteDetails(c, schoolClassID)
+	view, err := h.classInviteDetailsForOrganization(c, organizationID, schoolClassID)
 	if err != nil {
 		h.respondMasterError(c, err)
 		return
@@ -221,6 +272,10 @@ func (h *Handler) getClassInvite(c *gin.Context) {
 
 func (h *Handler) classInviteDetails(c *gin.Context, schoolClassID uint64) (classInviteView, error) {
 	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
+	return h.classInviteDetailsForOrganization(c, orgID, schoolClassID)
+}
+
+func (h *Handler) classInviteDetailsForOrganization(c *gin.Context, orgID, schoolClassID uint64) (classInviteView, error) {
 	classes, err := h.masterData.ListSchoolClasses(c.Request.Context(), orgID)
 	if err != nil {
 		return classInviteView{}, err
@@ -246,12 +301,22 @@ func (h *Handler) classInviteDetails(c *gin.Context, schoolClassID uint64) (clas
 			break
 		}
 	}
-	return classInviteView{SchoolClassID: schoolClass.ID, SchoolName: schoolName, Grade: schoolClass.Grade, ClassName: schoolClass.Name, Label: strings.TrimSpace(schoolName + " · " + schoolClass.Grade + schoolClass.Name)}, nil
+	organizationName := ""
+	if organization, organizationErr := h.findOrganization(c.Request.Context(), orgID); organizationErr == nil {
+		organizationName = organization.Name
+	}
+	return classInviteView{OrganizationID: orgID, OrganizationName: organizationName, SchoolClassID: schoolClass.ID, SchoolName: schoolName, Grade: schoolClass.Grade, ClassName: schoolClass.Name, Label: strings.TrimSpace(schoolName + " · " + schoolClass.Grade + schoolClass.Name)}, nil
 }
 
 func (h *Handler) classInviteToken(orgID, schoolClassID uint64) string {
+	encodedOrganizationID := strconv.FormatUint(orgID, 36)
 	encodedID := strconv.FormatUint(schoolClassID, 36)
-	return "c" + encodedID + "." + h.classInviteSignature(orgID, encodedID)
+	return "c" + encodedOrganizationID + "." + encodedID + "." + h.classInviteSignature(orgID, encodedID)
+}
+
+func (h *Handler) organizationInviteToken(orgID uint64) string {
+	encodedID := strconv.FormatUint(orgID, 36)
+	return "o" + encodedID + "." + h.classInviteSignature(orgID, "organization")
 }
 
 func (h *Handler) classInviteSignature(orgID uint64, encodedID string) string {
@@ -265,20 +330,75 @@ func (h *Handler) classInviteSignature(orgID uint64, encodedID string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:6])
 }
 
-func (h *Handler) schoolClassIDFromInviteToken(c *gin.Context, token string) (uint64, error) {
+func (h *Handler) classInviteTarget(token string) (uint64, uint64, error) {
 	if len(token) < 4 || token[0] != 'c' {
-		return 0, errInvalidClassInviteToken
+		return 0, 0, errInvalidClassInviteToken
 	}
-	parts := strings.SplitN(token[1:], ".", 2)
-	orgID := identity.OrganizationIDFromContext(c.Request.Context(), h.orgID)
-	if len(parts) != 2 || parts[0] == "" || !hmac.Equal([]byte(parts[1]), []byte(h.classInviteSignature(orgID, parts[0]))) {
-		return 0, errInvalidClassInviteToken
+	parts := strings.Split(token[1:], ".")
+	var organizationID uint64
+	var encodedClassID, signature string
+	switch len(parts) {
+	case 2:
+		// Legacy links were issued for the default organization and only carried
+		// the class id. Keep them valid while new links are tenant-scoped.
+		organizationID = h.orgID
+		encodedClassID, signature = parts[0], parts[1]
+	case 3:
+		var err error
+		organizationID, err = strconv.ParseUint(parts[0], 36, 64)
+		if err != nil || organizationID == 0 {
+			return 0, 0, errInvalidClassInviteToken
+		}
+		encodedClassID, signature = parts[1], parts[2]
+	default:
+		return 0, 0, errInvalidClassInviteToken
 	}
-	schoolClassID, err := strconv.ParseUint(parts[0], 36, 64)
+	if encodedClassID == "" || signature == "" || !hmac.Equal([]byte(signature), []byte(h.classInviteSignature(organizationID, encodedClassID))) {
+		return 0, 0, errInvalidClassInviteToken
+	}
+	schoolClassID, err := strconv.ParseUint(encodedClassID, 36, 64)
 	if err != nil || schoolClassID == 0 {
+		return 0, 0, errInvalidClassInviteToken
+	}
+	return organizationID, schoolClassID, nil
+}
+
+func (h *Handler) organizationIDFromInviteToken(token string) (uint64, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return 0, errInvalidClassInviteToken
 	}
-	return schoolClassID, nil
+	if token[0] == 'c' {
+		organizationID, _, err := h.classInviteTarget(token)
+		return organizationID, err
+	}
+	if token[0] != 'o' {
+		return 0, errInvalidClassInviteToken
+	}
+	parts := strings.Split(token[1:], ".")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return 0, errInvalidClassInviteToken
+	}
+	organizationID, err := strconv.ParseUint(parts[0], 36, 64)
+	if err != nil || organizationID == 0 || !hmac.Equal([]byte(parts[1]), []byte(h.classInviteSignature(organizationID, "organization"))) {
+		return 0, errInvalidClassInviteToken
+	}
+	return organizationID, nil
+}
+
+func (h *Handler) schoolClassIDFromInviteToken(c *gin.Context, token string) (uint64, error) {
+	if strings.HasPrefix(strings.TrimSpace(token), "o") {
+		organizationID, err := h.organizationIDFromInviteToken(token)
+		if err == nil && organizationID != identity.OrganizationIDFromContext(c.Request.Context(), h.orgID) {
+			return 0, errClassInviteOrganizationMismatch
+		}
+		return 0, err
+	}
+	organizationID, schoolClassID, err := h.classInviteTarget(token)
+	if err == nil && organizationID != identity.OrganizationIDFromContext(c.Request.Context(), h.orgID) {
+		return 0, errClassInviteOrganizationMismatch
+	}
+	return schoolClassID, err
 }
 
 type accountView struct {
@@ -481,6 +601,7 @@ type childApplicationRequest struct {
 }
 
 var errInvalidClassInviteToken = errors.New("parent: class invite token is invalid")
+var errClassInviteOrganizationMismatch = errors.New("parent: class invite belongs to another organization")
 
 func (r childApplicationRequest) Validate() []response.ValidationDetail {
 	details := make([]response.ValidationDetail, 0, 3)
@@ -516,10 +637,11 @@ func (r reviewChildApplicationRequest) Validate() []response.ValidationDetail {
 }
 
 type parentLoginRequest struct {
-	Code     string `json:"code"`
-	Nickname string `json:"nickname"`
-	Avatar   string `json:"avatar"`
-	OpenID   string `json:"openid"`
+	Code        string `json:"code"`
+	Nickname    string `json:"nickname"`
+	Avatar      string `json:"avatar"`
+	OpenID      string `json:"openid"`
+	InviteToken string `json:"invite_token"`
 }
 
 type phoneLoginRequest struct {
@@ -626,11 +748,23 @@ func (h *Handler) loginWithWeChat(c *gin.Context) {
 			return
 		}
 	}
-	account, err := h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), openID)
+	organizationID := h.orgID
+	if strings.TrimSpace(req.InviteToken) != "" {
+		organizationID, err = h.organizationIDFromInviteToken(strings.TrimSpace(req.InviteToken))
+		if err != nil {
+			response.Error(c, response.BadRequest("机构邀请二维码无效或已失效", err))
+			return
+		}
+	}
+	if _, err := h.findOrganization(c.Request.Context(), organizationID); err != nil {
+		response.Error(c, response.BadRequest("机构不存在或暂未开放加入", err))
+		return
+	}
+	account, err := h.store.FindAccountByOpenID(c.Request.Context(), organizationID, openID)
 	if errors.Is(err, ErrNotFound) {
-		account, err = h.store.CreateAccount(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), CreateAccountParams{OpenID: openID, Nickname: strings.TrimSpace(req.Nickname), Avatar: strings.TrimSpace(req.Avatar)})
+		account, err = h.store.CreateAccount(c.Request.Context(), organizationID, CreateAccountParams{OpenID: openID, Nickname: strings.TrimSpace(req.Nickname), Avatar: strings.TrimSpace(req.Avatar)})
 		if errors.Is(err, ErrConflict) {
-			account, err = h.store.FindAccountByOpenID(c.Request.Context(), identity.OrganizationIDFromContext(c.Request.Context(), h.orgID), openID)
+			account, err = h.store.FindAccountByOpenID(c.Request.Context(), organizationID, openID)
 		}
 	}
 	if err != nil {
@@ -647,6 +781,136 @@ func (h *Handler) loginWithWeChat(c *gin.Context) {
 		return
 	}
 	response.OK(c, parentTokenView{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken, ExpiresIn: pair.ExpiresIn, Principal: string(identity.PrincipalKindParent), Role: "parent"})
+}
+
+type parentOrganizationView struct {
+	ID      uint64 `json:"id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug,omitempty"`
+	Status  string `json:"status"`
+	Current bool   `json:"current"`
+}
+
+type switchParentOrganizationRequest struct {
+	OrganizationID uint64 `json:"organization_id"`
+	InviteToken    string `json:"invite_token"`
+}
+
+func (h *Handler) listParentOrganizations(c *gin.Context) {
+	account, ok := h.currentAccount(c)
+	if !ok {
+		return
+	}
+	accounts, err := h.store.ListAccountsByOpenID(c.Request.Context(), account.OpenID)
+	if err != nil {
+		h.respondStoreError(c, err)
+		return
+	}
+	organizations, err := h.organizationList(c.Request.Context())
+	if err != nil {
+		response.Error(c, response.DependencyUnavailable(err))
+		return
+	}
+	organizationByID := make(map[uint64]platformadmin.Organization, len(organizations))
+	for _, item := range organizations {
+		organizationByID[item.ID] = item
+	}
+	items := make([]parentOrganizationView, 0, len(accounts))
+	for _, item := range accounts {
+		organization, exists := organizationByID[item.OrganizationID]
+		if !exists {
+			organization = platformadmin.Organization{ID: item.OrganizationID, Name: fmt.Sprintf("机构 %d", item.OrganizationID), Status: platformadmin.OrganizationStatusActive}
+		}
+		items = append(items, parentOrganizationView{ID: organization.ID, Name: organization.Name, Slug: organization.Slug, Status: organization.Status, Current: organization.ID == account.OrganizationID})
+	}
+	response.OK(c, listResponse[parentOrganizationView]{Items: items, Total: len(items)})
+}
+
+func (h *Handler) switchParentOrganization(c *gin.Context) {
+	current, ok := h.currentAccount(c)
+	if !ok {
+		return
+	}
+	var req switchParentOrganizationRequest
+	if err := request.BindJSON(c, &req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	targetOrganizationID := req.OrganizationID
+	inviteToken := strings.TrimSpace(req.InviteToken)
+	if inviteToken != "" {
+		invitedOrganizationID, err := h.organizationIDFromInviteToken(inviteToken)
+		if err != nil {
+			response.Error(c, response.BadRequest("机构邀请二维码无效或已失效", err))
+			return
+		}
+		if targetOrganizationID != 0 && targetOrganizationID != invitedOrganizationID {
+			response.Error(c, response.BadRequest("邀请机构与目标机构不一致", nil))
+			return
+		}
+		targetOrganizationID = invitedOrganizationID
+	}
+	if targetOrganizationID == 0 {
+		response.Error(c, response.BadRequest("请先选择或扫描要加入的机构", nil))
+		return
+	}
+	if _, err := h.findOrganization(c.Request.Context(), targetOrganizationID); err != nil {
+		response.Error(c, response.BadRequest("机构不存在或暂未开放加入", err))
+		return
+	}
+	account := current
+	var err error
+	if targetOrganizationID != current.OrganizationID {
+		account, err = h.store.FindAccountByOpenID(c.Request.Context(), targetOrganizationID, current.OpenID)
+		if errors.Is(err, ErrNotFound) && inviteToken != "" {
+			account, err = h.store.CreateAccount(c.Request.Context(), targetOrganizationID, CreateAccountParams{OpenID: current.OpenID, Nickname: current.Nickname, Avatar: current.Avatar})
+			if errors.Is(err, ErrConflict) {
+				account, err = h.store.FindAccountByOpenID(c.Request.Context(), targetOrganizationID, current.OpenID)
+			}
+		}
+		if errors.Is(err, ErrNotFound) {
+			response.Error(c, response.Forbidden())
+			return
+		}
+		if err != nil {
+			h.respondStoreError(c, err)
+			return
+		}
+	}
+	if account.Status != AccountStatusActive {
+		response.Error(c, response.BadRequest("家长账号已停用", nil))
+		return
+	}
+	pair, err := h.tokens.IssuePair(identity.Principal{Kind: identity.PrincipalKindParent, SubjectID: account.ID, OrganizationID: account.OrganizationID, Role: identity.UserRole("parent")})
+	if err != nil {
+		response.Error(c, response.Internal(err))
+		return
+	}
+	response.OK(c, parentTokenView{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken, ExpiresIn: pair.ExpiresIn, Principal: string(identity.PrincipalKindParent), Role: "parent"})
+}
+
+func (h *Handler) organizationList(ctx context.Context) ([]platformadmin.Organization, error) {
+	if h.organizationStore != nil {
+		return h.organizationStore.ListOrganizations(ctx)
+	}
+	now := time.Now().UTC()
+	return []platformadmin.Organization{{ID: h.orgID, Name: "我的托管班", Slug: "default", Status: platformadmin.OrganizationStatusActive, CreatedAt: now, UpdatedAt: now}}, nil
+}
+
+func (h *Handler) findOrganization(ctx context.Context, organizationID uint64) (platformadmin.Organization, error) {
+	if organizationID == 0 {
+		return platformadmin.Organization{}, platformadmin.ErrNotFound
+	}
+	organizations, err := h.organizationList(ctx)
+	if err != nil {
+		return platformadmin.Organization{}, err
+	}
+	for _, item := range organizations {
+		if item.ID == organizationID && item.Status == platformadmin.OrganizationStatusActive {
+			return item, nil
+		}
+	}
+	return platformadmin.Organization{}, platformadmin.ErrNotFound
 }
 
 func (h *Handler) loginWithPhone(c *gin.Context) {

@@ -65,6 +65,28 @@ func (s *MemoryStore) FindAccountByOpenID(_ context.Context, orgID uint64, openI
 	return Account{}, fmt.Errorf("%w: account %s", ErrNotFound, openID)
 }
 
+func (s *MemoryStore) ListAccountsByOpenID(_ context.Context, openID string) ([]Account, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	openID = strings.TrimSpace(openID)
+	out := make([]Account, 0)
+	for _, item := range s.accounts {
+		if item.OpenID == openID && item.Status == AccountStatusActive {
+			out = append(out, item)
+		}
+	}
+	slices.SortFunc(out, func(left, right Account) int {
+		if left.OrganizationID < right.OrganizationID {
+			return -1
+		}
+		if left.OrganizationID > right.OrganizationID {
+			return 1
+		}
+		return 0
+	})
+	return out, nil
+}
+
 func (s *MemoryStore) GetLatestPrivacyConsent(_ context.Context, orgID, parentID uint64) (PrivacyConsent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

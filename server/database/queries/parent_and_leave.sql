@@ -14,6 +14,12 @@ FROM parent_accounts
 WHERE openid = ? AND organization_id = ?
 LIMIT 1;
 
+-- name: ListParentAccountsByOpenID :many
+SELECT id, organization_id, openid, nickname, avatar, status, created_at, updated_at
+FROM parent_accounts
+WHERE openid = ? AND status = 'active'
+ORDER BY organization_id, id;
+
 -- name: CreateParentStudentBinding :execresult
 INSERT INTO parent_student_bindings (
     organization_id, parent_account_id, student_id, relationship, is_primary, status

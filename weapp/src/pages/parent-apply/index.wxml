@@ -15,7 +15,7 @@
 
   <view wx:if="{{isInvited && !inviteError}}" class="first-entry-invite-note">
     <view class="first-entry-invite-icon">✓</view>
-    <view><view class="first-entry-invite-title">已进入老师邀请的班级</view><view class="first-entry-invite-text">{{inviteLoading ? '正在确认班级信息…' : (inviteClassLabel ? inviteClassLabel + '，' : '') + '你只需要填写孩子姓名。'}}</view></view>
+    <view><view class="first-entry-invite-title">{{inviteType === 'organization' ? '已进入机构邀请' : '已进入老师邀请的班级'}}</view><view class="first-entry-invite-text">{{inviteLoading ? '正在确认邀请信息…' : (inviteClassLabel ? inviteClassLabel + '，' : '') + (inviteType === 'organization' ? '请填写孩子姓名和联系方式，班级由老师确认。' : '你只需要填写孩子姓名。')}}</view></view>
   </view>
 
   <view wx:if="{{inviteError}}" class="first-entry-rejected-note">

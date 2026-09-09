@@ -17,6 +17,7 @@ type Store interface {
 	CreateAccount(context.Context, uint64, CreateAccountParams) (Account, error)
 	FindAccountByID(context.Context, uint64, uint64) (Account, error)
 	FindAccountByOpenID(context.Context, uint64, string) (Account, error)
+	ListAccountsByOpenID(context.Context, string) ([]Account, error)
 	GetLatestPrivacyConsent(context.Context, uint64, uint64) (PrivacyConsent, error)
 	RecordPrivacyConsent(context.Context, uint64, uint64, RecordPrivacyConsentParams) (PrivacyConsent, error)
 	ListAccountsForStudent(context.Context, uint64, uint64) ([]Account, error)

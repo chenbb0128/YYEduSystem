@@ -99,6 +99,7 @@ type Querier interface {
 	ListOrganizationInvites(ctx context.Context, arg ListOrganizationInvitesParams) ([]OrganizationInvite, error)
 	ListOrganizationRegistrations(ctx context.Context, arg ListOrganizationRegistrationsParams) ([]OrganizationRegistration, error)
 	ListOrganizations(ctx context.Context) ([]ListOrganizationsRow, error)
+	ListParentAccountsByOpenID(ctx context.Context, openid string) ([]ParentAccount, error)
 	ListParentAccountsForStudent(ctx context.Context, arg ListParentAccountsForStudentParams) ([]ParentAccount, error)
 	ListParentChildApplications(ctx context.Context, arg ListParentChildApplicationsParams) ([]ListParentChildApplicationsRow, error)
 	ListParentLeaveRequests(ctx context.Context, arg ListParentLeaveRequestsParams) ([]LeaveRequest, error)

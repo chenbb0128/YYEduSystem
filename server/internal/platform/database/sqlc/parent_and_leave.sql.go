@@ -368,6 +368,45 @@ func (q *Queries) ListApprovedLeaveStudentIDs(ctx context.Context, arg ListAppro
 	return items, nil
 }
 
+const listParentAccountsByOpenID = `-- name: ListParentAccountsByOpenID :many
+SELECT id, organization_id, openid, nickname, avatar, status, created_at, updated_at
+FROM parent_accounts
+WHERE openid = ? AND status = 'active'
+ORDER BY organization_id, id
+`
+
+func (q *Queries) ListParentAccountsByOpenID(ctx context.Context, openid string) ([]ParentAccount, error) {
+	rows, err := q.db.QueryContext(ctx, listParentAccountsByOpenID, openid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ParentAccount{}
+	for rows.Next() {
+		var i ParentAccount
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Openid,
+			&i.Nickname,
+			&i.Avatar,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listParentAccountsForStudent = `-- name: ListParentAccountsForStudent :many
 SELECT p.id, p.organization_id, p.openid, p.nickname, p.avatar, p.status,
        p.created_at, p.updated_at

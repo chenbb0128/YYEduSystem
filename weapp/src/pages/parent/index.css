@@ -1392,6 +1392,67 @@ page {
   border-radius: 999rpx;
 }
 
+.organization-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.organization-row {
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  padding: 18rpx 20rpx;
+  background: #fffaf1;
+  border: 1rpx solid #f1e4d1;
+  border-radius: 20rpx;
+}
+
+.organization-row-current {
+  background: #f2fbf5;
+  border-color: #77b995;
+}
+
+.organization-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #684a1d;
+  background: #f4c96b;
+  border-radius: 20rpx;
+}
+
+.organization-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.organization-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #3e3428;
+  white-space: nowrap;
+}
+
+.organization-status {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9b8a75;
+}
+
+.organization-action {
+  font-size: 23rpx;
+  font-weight: 700;
+  color: #5b9f79;
+}
+
 .mine-child-list {
   margin-top: 24rpx;
 }

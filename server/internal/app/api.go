@@ -265,6 +265,7 @@ func NewAPI(cfg config.Config, logger *slog.Logger) (*API, error) {
 	parentHandler := parent.NewHandler(parentStore, masterDataStore, pickupStore, tokens)
 	parentHandler.SetStaffScope(assignmentStore)
 	parentHandler.SetUserStore(userStore)
+	parentHandler.SetOrganizationStore(platformStore)
 	parentHandler.SetAuditWriter(auditStore)
 	parentHandler.SetClassInviteSecret(secret)
 	auditHandler := auditmodule.NewHandler(auditStore, masterdata.DefaultOrganizationID)

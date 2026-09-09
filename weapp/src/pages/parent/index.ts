@@ -1,12 +1,14 @@
 import type { ChildApplication } from '@/services/child-applications'
 import type { DietNoteChangeRequest, MealPlan } from '@/services/meal'
+import type { ParentOrganization } from '@/services/organizations'
 import type { LeaveRequest, ParentChild, ParentHomework, ParentMe, ParentNotification, ParentPickupEvent, ParentPickupToday } from '@/services/parent'
 import type { MessageSubscription, MessageSubscriptionKind } from '@/services/subscriptions'
 import type { DailySummary } from '@/services/summary'
-import { getStoredPhoneLoginPhone } from '@/services/auth'
+import { getStoredPhoneLoginPhone, saveAuthToken } from '@/services/auth'
 import { createParentChildApplication, getParentChildApplications, updateParentChildApplication } from '@/services/child-applications'
 import { clearPendingClassInviteToken, getPendingClassInviteToken, savePendingClassInviteToken } from '@/services/class-invites'
 import { createParentDietNoteChangeRequest, getParentDietNote, getParentDietNoteChangeRequests, getParentMealHistory, getParentMeals, mealPhotoURL } from '@/services/meal'
+import { getParentOrganizations, switchParentOrganization } from '@/services/organizations'
 import { cancelParentLeaveRequest, createParentLeaveRequest, createParentPickupChange, getParentHomework, getParentLeaveRequests, getParentMe, getParentNotifications, getParentPickupEvents, getParentPickupToday, leaveStatusLabel, markParentNotificationRead, parentPhotoURL, updateParentLeaveRequest } from '@/services/parent'
 import { getToday } from '@/services/pickup'
 import { getParentPrivacyConsent, recordParentPrivacyConsent } from '@/services/privacy'
@@ -63,6 +65,7 @@ type DietNoteChangeRequestView = DietNoteChangeRequest & { status_label: string 
 type ParentSubscriptionView = MessageSubscription & { kind_label: string, status_label: string, status_class: string, detail: string }
 type ParentFormField = 'childName' | 'schoolName' | 'classText' | 'guardianName' | 'guardianPhone' | 'relationship' | 'applicationNotes' | 'leaveDate' | 'leaveReason' | 'changeNote'
 type ParentTab = 'home' | 'dynamic' | 'apply' | 'mine'
+type ParentOrganizationView = ParentOrganization & { status_label: string, initial: string }
 
 const applicationStatusLabels: Record<string, string> = {
   approved: '已通过',
@@ -158,6 +161,10 @@ function toSubscriptionView(item: MessageSubscription): ParentSubscriptionView {
   }
 }
 
+function toOrganizationView(item: ParentOrganization): ParentOrganizationView {
+  return { ...item, status_label: item.status === 'active' ? '正常使用' : '暂不可用', initial: item.name.slice(0, 1) || '机' }
+}
+
 Page({
   data: {
     contentReady: false,
@@ -212,6 +219,9 @@ Page({
     subscriptionConfigured: hasConfiguredSubscriptionTemplates(),
     subscriptionLoading: false,
     subscriptions: [] as ParentSubscriptionView[],
+    organizations: [] as ParentOrganizationView[],
+    organizationSwitching: false,
+    currentOrganizationName: '当前机构',
     privacyConsentVisible: false,
     privacyConsentLoading: false,
     privacyPolicyVersion: '',
@@ -229,10 +239,18 @@ Page({
     })
     if (inviteToken) {
       savePendingClassInviteToken(inviteToken)
+      if (appStore.authenticated && appStore.role === 'parent') {
+        void this.joinOrganizationByInvite(inviteToken)
+      }
     }
     void this.loadParentData()
   },
   onShow() {
+    const pendingInviteToken = decodeInviteToken(getPendingClassInviteToken())
+    if (pendingInviteToken && pendingInviteToken !== this.data.inviteToken && appStore.authenticated && appStore.role === 'parent') {
+      this.setData({ inviteToken: pendingInviteToken })
+      void this.joinOrganizationByInvite(pendingInviteToken)
+    }
     void this.loadParentData()
   },
   async loadParentData() {
@@ -278,7 +296,7 @@ Page({
   },
   async loadParentAccountSecondaryData() {
     try {
-      const [subscriptionResult, applicationResult] = await Promise.allSettled([getParentSubscriptions(), getParentChildApplications()])
+      const [subscriptionResult, applicationResult, organizationResult] = await Promise.allSettled([getParentSubscriptions(), getParentChildApplications(), getParentOrganizations()])
       if (subscriptionResult.status === 'fulfilled') {
         this.setData({ subscriptions: subscriptionResult.value.items.map(toSubscriptionView) })
       }
@@ -288,13 +306,17 @@ Page({
       else {
         this.showToast(applicationResult.reason instanceof Error ? applicationResult.reason.message : '申请记录暂时无法加载')
       }
+      if (organizationResult.status === 'fulfilled') {
+        const organizations = organizationResult.value.items.map(toOrganizationView)
+        this.setData({ organizations, currentOrganizationName: organizations.find(item => item.current)?.name || '当前机构' })
+      }
     }
     catch {
       // Account-side secondary data must not hide the already loaded child timeline.
     }
   },
   clearParentContent() {
-    this.setData({ bound: false, children: [], applications: [], events: [], notifications: [], notificationUnreadCount: 0, notificationNextCursor: 0, notificationHasMore: false, homework: [], leaves: [], pickupToday: null, meals: [], tomorrowMeals: [], mealHistory: [], dietNote: '', dietNoteRequests: [], dailySummary: null, dailySummaryChildUpdate: '', subscriptions: [], selectedStudentClassLabel: '班级待同步', dynamicLoadNotice: '' })
+    this.setData({ bound: false, children: [], applications: [], events: [], notifications: [], notificationUnreadCount: 0, notificationNextCursor: 0, notificationHasMore: false, homework: [], leaves: [], pickupToday: null, meals: [], tomorrowMeals: [], mealHistory: [], dietNote: '', dietNoteRequests: [], dailySummary: null, dailySummaryChildUpdate: '', subscriptions: [], organizations: [], currentOrganizationName: '当前机构', selectedStudentClassLabel: '班级待同步', dynamicLoadNotice: '' })
   },
   async loadPrivacyConsent(): Promise<boolean> {
     this.setData({ privacyConsentLoading: true })
@@ -769,6 +791,54 @@ Page({
     }
     finally {
       this.setData({ subscriptionLoading: false })
+    }
+  },
+  async joinOrganizationByInvite(inviteToken: string) {
+    if (!inviteToken || this.data.organizationSwitching) {
+      return
+    }
+    this.setData({ organizationSwitching: true })
+    try {
+      const token = await switchParentOrganization({ invite_token: inviteToken })
+      saveAuthToken(token)
+      if (inviteToken.startsWith('o')) {
+        clearPendingClassInviteToken()
+      }
+      parentLoadGuard.markDirty()
+      this.showToast('已加入并切换到新机构')
+      await this.loadParentData()
+      const organizationResult = await getParentOrganizations()
+      const organizations = organizationResult.items.map(toOrganizationView)
+      this.setData({ organizations, currentOrganizationName: organizations.find(item => item.current)?.name || '当前机构' })
+    }
+    catch (error) {
+      this.showToast(error instanceof Error ? error.message : '加入机构失败，请确认二维码有效')
+    }
+    finally {
+      this.setData({ organizationSwitching: false })
+    }
+  },
+  async handleSwitchOrganization(event: WechatMiniprogram.TouchEvent) {
+    const organizationID = Number(event.currentTarget.dataset.organizationId)
+    if (!organizationID || this.data.organizationSwitching || this.data.organizations.find(item => item.id === organizationID)?.current) {
+      return
+    }
+    this.setData({ organizationSwitching: true })
+    try {
+      const token = await switchParentOrganization({ organization_id: organizationID })
+      saveAuthToken(token)
+      parentLoadGuard.markDirty()
+      const organizationResult = await getParentOrganizations()
+      const organizations = organizationResult.items.map(toOrganizationView)
+      this.setData({ organizations, currentOrganizationName: organizations.find(item => item.current)?.name || '当前机构' })
+      await this.loadParentData()
+      this.showToast('已切换机构')
+    }
+    catch (error) {
+      this.showToast(error instanceof Error ? error.message : '机构切换失败，请稍后重试')
+    }
+    finally {
+      this.setData({ organizationSwitching: false })
     }
   },
   handleAuthExpired() {

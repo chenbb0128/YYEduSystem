@@ -1,7 +1,8 @@
 import type { ChildApplication } from '@/services/child-applications'
-import { getStoredPhoneLoginPhone } from '@/services/auth'
+import { getStoredPhoneLoginPhone, saveAuthToken } from '@/services/auth'
 import { createParentChildApplication, getParentChildApplications, updateParentChildApplication } from '@/services/child-applications'
 import { clearPendingClassInviteToken, getClassInvite, getPendingClassInviteToken } from '@/services/class-invites'
+import { switchParentOrganization } from '@/services/organizations'
 import { getParentMe } from '@/services/parent'
 import { isRequestError } from '@/services/request'
 import { useAppStore } from '@/stores'
@@ -52,6 +53,8 @@ Page({
     applications: [] as ChildApplicationView[],
     invitedSchoolClassID: 0,
     inviteToken: '',
+    inviteType: 'class' as 'class' | 'organization',
+    organizationSwitching: false,
     inviteClassLabel: '',
     inviteLoading: false,
     inviteError: '',
@@ -79,13 +82,40 @@ Page({
       isInvited: Boolean(invitedSchoolClassID || inviteToken),
       guardianPhone: getStoredPhoneLoginPhone(),
     })
+    if (inviteToken && appStore.authenticated && appStore.role === 'parent') {
+      void this.joinOrganizationByInvite(inviteToken)
+    }
     if (inviteToken) {
       void this.loadClassInvite(inviteToken)
     }
     void this.loadApplicationData()
   },
   onShow() {
+    const pendingInviteToken = decodeInviteToken(getPendingClassInviteToken())
+    if (pendingInviteToken && pendingInviteToken !== this.data.inviteToken && appStore.authenticated && appStore.role === 'parent') {
+      this.setData({ inviteToken: pendingInviteToken, isInvited: true })
+      void this.joinOrganizationByInvite(pendingInviteToken)
+      void this.loadClassInvite(pendingInviteToken)
+    }
     void this.loadApplicationData()
+  },
+  async joinOrganizationByInvite(inviteToken: string) {
+    if (!inviteToken || this.data.organizationSwitching) {
+      return
+    }
+    this.setData({ organizationSwitching: true })
+    try {
+      const token = await switchParentOrganization({ invite_token: inviteToken })
+      saveAuthToken(token)
+      applicationLoadGuard.markDirty()
+      await this.loadApplicationData()
+    }
+    catch (error) {
+      this.showToast(error instanceof Error ? error.message : '加入机构失败，请确认二维码有效')
+    }
+    finally {
+      this.setData({ organizationSwitching: false })
+    }
   },
   async loadApplicationData() {
     return applicationLoadGuard.run(() => this.loadApplicationDataInternal())
@@ -119,7 +149,7 @@ Page({
     this.setData({ inviteLoading: true, inviteError: '' })
     try {
       const invite = await getClassInvite(token)
-      this.setData({ invitedSchoolClassID: invite.school_class_id, inviteClassLabel: invite.label || `${invite.grade}${invite.class_name}`, isInvited: true })
+      this.setData({ invitedSchoolClassID: invite.school_class_id, inviteClassLabel: invite.label || `${invite.grade}${invite.class_name}`, inviteType: invite.school_class_id ? 'class' : 'organization', isInvited: true })
     }
     catch (error) {
       this.setData({ inviteError: error instanceof Error ? error.message : '班级邀请无效，请让老师重新生成二维码' })
