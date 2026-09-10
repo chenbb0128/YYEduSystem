@@ -210,7 +210,7 @@ func notificationTemplateKind(kind string) string {
 		return "meal"
 	case "homework_published", "homework_review":
 		return "homework"
-	case "leave_review":
+	case "leave_review", "child_application_approved":
 		return "leave"
 	case "daily_summary_published":
 		return "summary"
