@@ -64,13 +64,8 @@ wechat:
     homework: ""
     leave: ""
     summary: ""
-  # 业务字段名映射到微信模板的 keyword 字段 ID；未配置时使用 thing1/thing2/time3。
-  subscribe_template_fields:
-    pickup: { title: thing1, content: thing2, time: time3 }
-    meal: { title: thing1, content: thing2, time: time3 }
-    homework: { title: thing1, content: thing2, time: time3 }
-    leave: { title: thing1, content: thing2, time: time3 }
-    summary: { title: thing1, content: thing2, time: time3 }
+  # 留空时使用内置的接送、作业、审核模板字段；自定义模板需按实际 keyword 字段另行配置。
+  subscribe_template_fields: {}
 
 sms:
   # 本地开发默认不调用短信平台，接口会返回随机 debug_code 供开发测试。

@@ -44,13 +44,8 @@ wechat:
     homework: "REPLACE_WITH_HOMEWORK_TEMPLATE_ID"
     leave: "REPLACE_WITH_LEAVE_TEMPLATE_ID"
     summary: "REPLACE_WITH_SUMMARY_TEMPLATE_ID"
-  subscribe_template_fields:
-    # 按实际模板 keyword 字段调整；字段名称不是固定的 thing1/thing2/time3。
-    pickup: { title: thing1, content: thing2, time: time3 }
-    meal: { title: thing1, content: thing2, time: time3 }
-    homework: { title: thing1, content: thing2, time: time3 }
-    leave: { title: thing1, content: thing2, time: time3 }
-    summary: { title: thing1, content: thing2, time: time3 }
+  # 留空时使用内置的接送、作业、审核模板字段；自定义模板需按实际 keyword 字段另行配置。
+  subscribe_template_fields: {}
 
 sms:
   # 开通腾讯云短信后再启用；真实密钥请通过环境变量注入，不要提交到仓库。

@@ -108,11 +108,7 @@ func (c WeChatConfig) HasSubscribeTemplates() bool {
 func (c WeChatConfig) TemplateDataForKind(kind, title, content string, at time.Time) map[string]string {
 	fields := c.SubscribeFields[strings.TrimSpace(kind)]
 	if len(fields) == 0 {
-		return map[string]string{
-			"thing1": title,
-			"thing2": content,
-			"time3":  at.Format("2006-01-02 15:04"),
-		}
+		return builtInSubscribeTemplateData(kind, title, content, at)
 	}
 	values := make(map[string]string, len(fields))
 	for valueName, fieldName := range fields {
@@ -130,6 +126,60 @@ func (c WeChatConfig) TemplateDataForKind(kind, title, content string, at time.T
 		}
 	}
 	return values
+}
+
+// builtInSubscribeTemplateData matches the three approved education templates
+// currently used by the staging mini program. Keep this fallback explicit:
+// WeChat template field numbers are determined by the selected keywords and
+// cannot safely use the old generic thing1/thing2/time3 payload.
+func builtInSubscribeTemplateData(kind, title, content string, at time.Time) map[string]string {
+	title = compactSubscribeValue(title)
+	content = compactSubscribeValue(content)
+	timestamp := at.Format("2006-01-02 15:04")
+	switch strings.TrimSpace(kind) {
+	case "pickup":
+		return map[string]string{
+			"thing1":            title,
+			"character_string2": "1/1",
+			"thing3":            content,
+			"time4":             timestamp,
+			"thing7":            "豆芽成长助手",
+		}
+	case "homework":
+		return map[string]string{
+			"thing1": "托管老师",
+			"thing2": "托管班",
+			"thing3": title,
+			"time5":  timestamp,
+			"thing6": content,
+		}
+	case "leave":
+		result := "通过"
+		if strings.Contains(title+content, "未同意") || strings.Contains(title+content, "驳回") || strings.Contains(title+content, "未通过") {
+			result = "未通过"
+		}
+		return map[string]string{
+			"phrase1": result,
+			"thing2":  "孩子",
+			"thing4":  title,
+			"time7":   timestamp,
+			"thing8":  content,
+		}
+	default:
+		return map[string]string{
+			"thing1": title,
+			"thing2": content,
+			"time3":  timestamp,
+		}
+	}
+}
+
+func compactSubscribeValue(value string) string {
+	value = strings.TrimSpace(value)
+	if len([]rune(value)) <= 20 {
+		return value
+	}
+	return string([]rune(value)[:20])
 }
 
 type StorageConfig struct {

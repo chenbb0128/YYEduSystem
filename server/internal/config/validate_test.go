@@ -244,6 +244,26 @@ func TestWechatTemplateDataSupportsPerKindFieldMapping(t *testing.T) {
 	}
 }
 
+func TestWechatTemplateDataUsesBuiltInFieldsForConfiguredTemplates(t *testing.T) {
+	at := time.Date(2026, 9, 10, 16, 30, 0, 0, time.UTC)
+	cfg := WeChatConfig{}
+
+	pickup := cfg.TemplateDataForKind("pickup", "今日接送安排已确认", "陈青：今日接送老师为王老师", at)
+	if pickup["thing1"] != "今日接送安排已确认" || pickup["character_string2"] != "1/1" || pickup["thing3"] != "陈青：今日接送老师为王老师" || pickup["time4"] != "2026-09-10 16:30" || pickup["thing7"] != "豆芽成长助手" {
+		t.Fatalf("pickup template data = %#v", pickup)
+	}
+
+	homework := cfg.TemplateDataForKind("homework", "今日作业已发布", "语文：完成课文朗读", at)
+	if homework["thing1"] != "托管老师" || homework["thing2"] != "托管班" || homework["thing3"] != "今日作业已发布" || homework["time5"] != "2026-09-10 16:30" || homework["thing6"] != "语文：完成课文朗读" {
+		t.Fatalf("homework template data = %#v", homework)
+	}
+
+	leave := cfg.TemplateDataForKind("leave", "请假未同意", "2026-09-10：请假申请未同意", at)
+	if leave["phrase1"] != "未通过" || leave["thing2"] != "孩子" || leave["thing4"] != "请假未同意" || leave["time7"] != "2026-09-10 16:30" || leave["thing8"] != "2026-09-10：请假申请未同意" {
+		t.Fatalf("leave template data = %#v", leave)
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		App: AppConfig{Name: "tuoguan-system", Env: "local"},
